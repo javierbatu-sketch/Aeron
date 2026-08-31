@@ -20,6 +20,8 @@ typedef struct AeronOptModelBuildOptions {
 	bool emissive;
 	const struct AeronOptAlphaOverride* alpha_overrides;
 	size_t alpha_override_count;
+	/* 0 keeps the glTF cooker's current default. */
+	int max_atlas_size;
 } AeronOptModelBuildOptions;
 
 typedef struct AeronOptAlphaOverride {
