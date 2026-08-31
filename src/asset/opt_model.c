@@ -323,6 +323,8 @@ bool Aeron_OptModelBuildMemory(const void* bytes, size_t size, const char* label
 	}
 	AeronGltfCookOptions cook_options;
 	aeron_gltf_cook_default_options(&cook_options);
+	if (options->max_atlas_size > 0)
+		cook_options.max_atlas_size = options->max_atlas_size;
 	cook_options.encoding           = AERON_GLTF_COOK_ENCODING_RGBA8;
 	cook_options.zstd_supercompress = false;
 	cook_options.verbose            = false;
