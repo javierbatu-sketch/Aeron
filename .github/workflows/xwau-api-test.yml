@@ -1,0 +1,18 @@
+name: XWAU API Test
+
+on:
+  push:
+    branches:
+      - xwau-001-atlas-api
+
+jobs:
+  api-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Compile public API test
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude \
+            -fsyntax-only tests/opt_model_atlas_options_test.c
