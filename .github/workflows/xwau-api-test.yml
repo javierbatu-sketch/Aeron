@@ -16,3 +16,6 @@ jobs:
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -Iinclude \
             -fsyntax-only tests/opt_model_atlas_options_test.c
+
+      - name: Verify OPT atlas option propagation
+        run: python3 tests/opt_model_atlas_propagation_test.py
