@@ -12,12 +12,18 @@ on:
       - 'tools/opt2gltf/opt2gltf.c'
       - 'tools/opt2gltf/opt_material_override.h'
       - 'tools/opt2gltf/opt_material_override.c'
+      - 'include/aeron/scene/gltf_mesh.h'
+      - 'src/scene/gltf_mesh.c'
+      - 'include/aeron/scene/mesh.h'
+      - 'src/scene/mesh.c'
       - 'tests/opt_model_material_overrides_api_test.c'
       - 'tests/opt_model_legacy_material_api_test.c'
       - 'tests/opt_material_legacy_override_test.c'
       - 'tests/opt_material_override_match_test.c'
       - 'tests/opt_model_material_overrides_propagation_test.py'
       - 'tests/gltf_legacy_material_contract_test.py'
+      - 'tests/gltf_legacy_material_loader_gpu_contract_test.py'
+      - 'tests/pbr_legacy_material_layout_test.c'
       - '.github/workflows/xwau-material-overrides-test.yml'
 
 jobs:
@@ -57,6 +63,17 @@ jobs:
       - name: Verify legacy glTF material RED contract
         shell: bash
         run: python3 tests/gltf_legacy_material_contract_test.py
+
+      - name: Verify legacy loader and 160-byte GPU RED contracts
+        shell: bash
+        run: |
+          status=0
+          python3 tests/gltf_legacy_material_loader_gpu_contract_test.py || status=1
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude             tests/pbr_legacy_material_layout_test.c             -o pbr_legacy_material_layout_test || status=1
+          if [ "$status" -eq 0 ]; then
+            ./pbr_legacy_material_layout_test || status=1
+          fi
+          exit "$status"
 
       - name: Build legacy material public RED contract
         shell: bash
