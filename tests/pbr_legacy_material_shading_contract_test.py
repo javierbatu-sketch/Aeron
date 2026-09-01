@@ -20,7 +20,7 @@ def main() -> None:
     # Legacy data must activate a separate generic shading branch.
     require(
         shader,
-        r"m\.flags\s*&\s*GLTF_MATERIAL_LEGACY",
+        r"m\.flags\s*&\s*GLTF_MATERIAL_LEGACY\b",
         "mesh shader does not branch on GLTF_MATERIAL_LEGACY",
     )
     require(
