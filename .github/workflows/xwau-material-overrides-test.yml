@@ -27,6 +27,7 @@ on:
       - 'tests/gltf_legacy_material_contract_test.py'
       - 'tests/gltf_legacy_material_loader_gpu_contract_test.py'
       - 'tests/pbr_legacy_material_shader_layout_test.py'
+      - 'tests/pbr_legacy_material_shading_contract_test.py'
       - 'tests/pbr_legacy_material_layout_test.c'
       - '.github/workflows/xwau-material-overrides-test.yml'
 
@@ -82,6 +83,10 @@ jobs:
       - name: Verify 160-byte PBR shader ABI RED contract
         shell: bash
         run: python3 tests/pbr_legacy_material_shader_layout_test.py
+
+      - name: Verify legacy material shading RED contract
+        shell: bash
+        run: python3 tests/pbr_legacy_material_shading_contract_test.py
 
       - name: Build legacy material public RED contract
         shell: bash
