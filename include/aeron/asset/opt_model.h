@@ -18,13 +18,39 @@ extern "C" {
 enum {
 	AERON_OPT_MATERIAL_OVERRIDE_METALLIC_FACTOR = 1u << 0,
 	AERON_OPT_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR = 1u << 1,
+	AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_EXPONENT = 1u << 2,
+	AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_INTENSITY = 1u << 3,
+	AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_COLOR_CONTROL = 1u << 4,
+	AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_VALUE = 1u << 5,
+	AERON_OPT_MATERIAL_OVERRIDE_LEGACY_AMBIENT = 1u << 6,
+	AERON_OPT_MATERIAL_OVERRIDE_NORMAL_SCALE = 1u << 7,
+	AERON_OPT_MATERIAL_OVERRIDE_LEGACY_LIGHTNESS_BOOST = 1u << 8,
+	AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SATURATION_BOOST = 1u << 9,
+	AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SHADELESS = 1u << 10,
+	AERON_OPT_MATERIAL_OVERRIDE_NORMAL_IMAGE = 1u << 11,
 };
+
+typedef struct AeronOptMaterialImage {
+	const uint8_t* rgba8;
+	uint32_t width;
+	uint32_t height;
+} AeronOptMaterialImage;
 
 typedef struct AeronOptMaterialOverride {
 	const char* texture_name;
 	uint32_t flags;
 	float metallic_factor;
 	float roughness_factor;
+	float legacy_specular_exponent;
+	float legacy_specular_intensity;
+	float legacy_specular_color_control;
+	float legacy_specular_value;
+	float legacy_ambient;
+	float normal_scale;
+	float legacy_lightness_boost;
+	float legacy_saturation_boost;
+	bool legacy_shadeless;
+	AeronOptMaterialImage normal_image;
 } AeronOptMaterialOverride;
 
 typedef struct AeronOptModelBuildOptions {

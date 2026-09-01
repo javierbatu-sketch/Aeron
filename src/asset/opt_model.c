@@ -68,17 +68,47 @@ static bool opt_model_arguments_valid(const char* label, const AeronOptModelBuil
 	}
 	const uint32_t known_material_flags =
 		AERON_OPT_MATERIAL_OVERRIDE_METALLIC_FACTOR |
-		AERON_OPT_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR;
+		AERON_OPT_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR |
+		AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_EXPONENT |
+		AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_INTENSITY |
+		AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_COLOR_CONTROL |
+		AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_VALUE |
+		AERON_OPT_MATERIAL_OVERRIDE_LEGACY_AMBIENT |
+		AERON_OPT_MATERIAL_OVERRIDE_NORMAL_SCALE |
+		AERON_OPT_MATERIAL_OVERRIDE_LEGACY_LIGHTNESS_BOOST |
+		AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SATURATION_BOOST |
+		AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SHADELESS |
+		AERON_OPT_MATERIAL_OVERRIDE_NORMAL_IMAGE;
 	for (size_t index = 0; index < options->material_override_count; ++index) {
 		const AeronOptMaterialOverride* override = &options->material_overrides[index];
-		if (!override->texture_name || !override->texture_name[0] ||
+		if ((override->texture_name && !override->texture_name[0]) ||
 			(override->flags & ~known_material_flags) != 0 ||
 			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_METALLIC_FACTOR) &&
 			 (!isfinite(override->metallic_factor) || override->metallic_factor < 0.0f ||
 			  override->metallic_factor > 1.0f)) ||
 			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR) &&
 			 (!isfinite(override->roughness_factor) || override->roughness_factor < 0.0f ||
-			  override->roughness_factor > 1.0f)))
+			  override->roughness_factor > 1.0f)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_EXPONENT) &&
+			 !isfinite(override->legacy_specular_exponent)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_INTENSITY) &&
+			 !isfinite(override->legacy_specular_intensity)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_COLOR_CONTROL) &&
+			 !isfinite(override->legacy_specular_color_control)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_VALUE) &&
+			 !isfinite(override->legacy_specular_value)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_AMBIENT) &&
+			 !isfinite(override->legacy_ambient)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_NORMAL_SCALE) &&
+			 !isfinite(override->normal_scale)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_LIGHTNESS_BOOST) &&
+			 !isfinite(override->legacy_lightness_boost)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SATURATION_BOOST) &&
+			 !isfinite(override->legacy_saturation_boost)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_NORMAL_IMAGE) &&
+			 (!override->normal_image.rgba8 ||
+			  !override->normal_image.width ||
+			  !override->normal_image.height)))
 			return false;
 	}
 	return true;
@@ -334,8 +364,40 @@ bool Aeron_OptModelBuildMemory(const void* bytes, size_t size, const char* label
 				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_METALLIC_FACTOR;
 			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR)
 				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_EXPONENT)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SPECULAR_EXPONENT;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_INTENSITY)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SPECULAR_INTENSITY;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_COLOR_CONTROL)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SPECULAR_COLOR_CONTROL;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SPECULAR_VALUE)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SPECULAR_VALUE;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_AMBIENT)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_AMBIENT;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_NORMAL_SCALE)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_NORMAL_SCALE;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_LIGHTNESS_BOOST)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_LIGHTNESS_BOOST;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SATURATION_BOOST)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SATURATION_BOOST;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_LEGACY_SHADELESS)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SHADELESS;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_NORMAL_IMAGE)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_NORMAL_IMAGE;
 			output->metallic_factor = input->metallic_factor;
 			output->roughness_factor = input->roughness_factor;
+			output->legacy_specular_exponent = input->legacy_specular_exponent;
+			output->legacy_specular_intensity = input->legacy_specular_intensity;
+			output->legacy_specular_color_control = input->legacy_specular_color_control;
+			output->legacy_specular_value = input->legacy_specular_value;
+			output->legacy_ambient = input->legacy_ambient;
+			output->normal_scale = input->normal_scale;
+			output->legacy_lightness_boost = input->legacy_lightness_boost;
+			output->legacy_saturation_boost = input->legacy_saturation_boost;
+			output->legacy_shadeless = input->legacy_shadeless;
+			output->normal_image.rgba8 = input->normal_image.rgba8;
+			output->normal_image.width = input->normal_image.width;
+			output->normal_image.height = input->normal_image.height;
 		}
 	}
 	const OptGltfBuildOptions build_options = {
