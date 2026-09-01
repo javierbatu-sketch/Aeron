@@ -16,6 +16,9 @@ on:
       - 'src/scene/gltf_mesh.c'
       - 'include/aeron/scene/mesh.h'
       - 'src/scene/mesh.c'
+      - 'shaders/scene_pbr_material_alpha.hlsli'
+      - 'shaders/scene_pbr_mesh_impl.hlsli'
+      - 'shaders/scene_pbr_prepass_mask.frag.hlsl'
       - 'tests/opt_model_material_overrides_api_test.c'
       - 'tests/opt_model_legacy_material_api_test.c'
       - 'tests/opt_material_legacy_override_test.c'
@@ -23,6 +26,7 @@ on:
       - 'tests/opt_model_material_overrides_propagation_test.py'
       - 'tests/gltf_legacy_material_contract_test.py'
       - 'tests/gltf_legacy_material_loader_gpu_contract_test.py'
+      - 'tests/pbr_legacy_material_shader_layout_test.py'
       - 'tests/pbr_legacy_material_layout_test.c'
       - '.github/workflows/xwau-material-overrides-test.yml'
 
@@ -74,6 +78,10 @@ jobs:
             ./pbr_legacy_material_layout_test || status=1
           fi
           exit "$status"
+
+      - name: Verify 160-byte PBR shader ABI RED contract
+        shell: bash
+        run: python3 tests/pbr_legacy_material_shader_layout_test.py
 
       - name: Build legacy material public RED contract
         shell: bash
