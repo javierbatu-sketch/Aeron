@@ -981,6 +981,12 @@ bool OptGltf_BuildMemory(const opt_file_t *opt,
         mat->pbr_metallic_roughness.metallic_factor  = 0.0f;
         mat->pbr_metallic_roughness.roughness_factor = 1.0f;
         mat->pbr_metallic_roughness.base_color_texture.texture = &build->textures[i];
+        if (!OptGltf_ApplyMaterialOverrides(
+                options ? options->material_overrides : NULL,
+                options ? options->material_override_count : 0,
+                t->name, i, mat, error)) {
+            goto fail;
+        }
         AlphaHistogram alpha_histogram = {0, 0, 0};
         OptGltfAlphaMode alpha_mode = classify_alpha(
             t->alpha, (size_t)t->width * (size_t)t->height,
@@ -1729,6 +1735,8 @@ bool opt2gltf_convert(const opt_file_t *opt,
         .emissive = emissive,
         .alpha_overrides = NULL,
         .alpha_override_count = 0,
+        .material_overrides = NULL,
+        .material_override_count = 0,
     };
     OptGltfDocument *document = NULL;
     opt_error_t error = {{0}};

@@ -62,6 +62,7 @@
 
 #include "cgltf.h"
 #include "opt.h"
+#include "opt_material_override.h"
 
 typedef struct OptGltfBuildOptions {
     float smooth_angle_degrees;
@@ -69,6 +70,8 @@ typedef struct OptGltfBuildOptions {
     bool emissive;
     const struct OptGltfAlphaOverride *alpha_overrides;
     size_t alpha_override_count;
+    const OptGltfMaterialOverride *material_overrides;
+    size_t material_override_count;
 } OptGltfBuildOptions;
 
 typedef enum OptGltfAlphaMode {

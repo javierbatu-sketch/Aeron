@@ -651,6 +651,7 @@ set_target_properties(lucas_opt PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 
 add_library(opt2gltf_lib STATIC
     tools/opt2gltf/opt2gltf.c
+    tools/opt2gltf/opt_material_override.c
 )
 target_include_directories(opt2gltf_lib
     PUBLIC

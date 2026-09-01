@@ -55,7 +55,8 @@ static bool opt_model_arguments_valid(const char* label, const AeronOptModelBuil
 	if (!label || !label[0] || !options || !out || !isfinite(options->smooth_angle_degrees) ||
 		options->smooth_angle_degrees < 0.0f || options->smooth_angle_degrees > 180.0f ||
 		!isfinite(options->emissive_strength) || options->emissive_strength < 0.0f ||
-		(options->alpha_override_count && !options->alpha_overrides))
+		(options->alpha_override_count && !options->alpha_overrides) ||
+		(options->material_override_count && !options->material_overrides))
 		return false;
 	for (size_t index = 0; index < options->alpha_override_count; ++index) {
 		const AeronOptAlphaOverride* override = &options->alpha_overrides[index];
@@ -63,6 +64,21 @@ static bool opt_model_arguments_valid(const char* label, const AeronOptModelBuil
 			override->alpha_mode < AERON_GLTF_ALPHA_OPAQUE || override->alpha_mode > AERON_GLTF_ALPHA_BLEND ||
 			!isfinite(override->alpha_cutoff) || override->alpha_cutoff < 0.0f ||
 			override->alpha_cutoff > 1.0f)
+			return false;
+	}
+	const uint32_t known_material_flags =
+		AERON_OPT_MATERIAL_OVERRIDE_METALLIC_FACTOR |
+		AERON_OPT_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR;
+	for (size_t index = 0; index < options->material_override_count; ++index) {
+		const AeronOptMaterialOverride* override = &options->material_overrides[index];
+		if (!override->texture_name || !override->texture_name[0] ||
+			(override->flags & ~known_material_flags) != 0 ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_METALLIC_FACTOR) &&
+			 (!isfinite(override->metallic_factor) || override->metallic_factor < 0.0f ||
+			  override->metallic_factor > 1.0f)) ||
+			((override->flags & AERON_OPT_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR) &&
+			 (!isfinite(override->roughness_factor) || override->roughness_factor < 0.0f ||
+			  override->roughness_factor > 1.0f)))
 			return false;
 	}
 	return true;
@@ -301,16 +317,40 @@ bool Aeron_OptModelBuildMemory(const void* bytes, size_t size, const char* label
 			alpha_overrides[index].alpha_cutoff = options->alpha_overrides[index].alpha_cutoff;
 		}
 	}
+	OptGltfMaterialOverride* material_overrides = NULL;
+	if (options->material_override_count) {
+		material_overrides = calloc(options->material_override_count, sizeof *material_overrides);
+		if (!material_overrides) {
+			free(alpha_overrides);
+			opt_free(source);
+			return opt_model_error(error, 1, "out of memory for OPT material overrides");
+		}
+		for (size_t index = 0; index < options->material_override_count; ++index) {
+			const AeronOptMaterialOverride* input = &options->material_overrides[index];
+			OptGltfMaterialOverride* output = &material_overrides[index];
+			output->texture_name = input->texture_name;
+			output->flags = 0;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_METALLIC_FACTOR)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_METALLIC_FACTOR;
+			if (input->flags & AERON_OPT_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR)
+				output->flags |= OPT_GLTF_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR;
+			output->metallic_factor = input->metallic_factor;
+			output->roughness_factor = input->roughness_factor;
+		}
+	}
 	const OptGltfBuildOptions build_options = {
 		.smooth_angle_degrees = options->smooth_angle_degrees,
 		.repair_normals       = true,
 		.emissive             = options->emissive,
 		.alpha_overrides      = alpha_overrides,
 		.alpha_override_count = options->alpha_override_count,
+		.material_overrides      = material_overrides,
+		.material_override_count = options->material_override_count,
 	};
 	OptGltfDocument* document  = NULL;
 	const bool       converted = OptGltf_BuildMemory(source, label, &build_options, &document, &parser_error);
 	free(alpha_overrides);
+	free(material_overrides);
 	if (!converted) {
 		opt_free(source);
 		return opt_model_error(error, 3, parser_error.msg);

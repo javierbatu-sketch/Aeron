@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "aeron/asset/flight_model.h"
 
@@ -14,12 +15,26 @@ extern "C" {
 #define AERON_OPT_METERS_PER_UNIT (1600.0f / 65536.0f)
 #define AERON_OPT_UNITS_PER_METER (65536.0f / 1600.0f)
 
+enum {
+	AERON_OPT_MATERIAL_OVERRIDE_METALLIC_FACTOR = 1u << 0,
+	AERON_OPT_MATERIAL_OVERRIDE_ROUGHNESS_FACTOR = 1u << 1,
+};
+
+typedef struct AeronOptMaterialOverride {
+	const char* texture_name;
+	uint32_t flags;
+	float metallic_factor;
+	float roughness_factor;
+} AeronOptMaterialOverride;
+
 typedef struct AeronOptModelBuildOptions {
 	float smooth_angle_degrees;
 	float emissive_strength;
 	bool emissive;
 	const struct AeronOptAlphaOverride* alpha_overrides;
 	size_t alpha_override_count;
+	const AeronOptMaterialOverride* material_overrides;
+	size_t material_override_count;
 	/* 0 keeps the glTF cooker's current default. */
 	int max_atlas_size;
 } AeronOptModelBuildOptions;
