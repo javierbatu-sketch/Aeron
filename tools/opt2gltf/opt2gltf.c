@@ -336,6 +336,81 @@ static bool set_flight_extension(GltfBuild *build, cgltf_node *node,
     return true;
 }
 
+static uint32_t legacy_material_metadata_flags(void)
+{
+    return
+        OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SPECULAR_EXPONENT |
+        OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SPECULAR_INTENSITY |
+        OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SPECULAR_COLOR_CONTROL |
+        OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SPECULAR_VALUE |
+        OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_AMBIENT |
+        OPT_GLTF_MATERIAL_OVERRIDE_NORMAL_SCALE |
+        OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_LIGHTNESS_BOOST |
+        OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SATURATION_BOOST |
+        OPT_GLTF_MATERIAL_OVERRIDE_LEGACY_SHADELESS;
+}
+
+static bool set_material_metadata(
+    GltfBuild *build,
+    cgltf_material *material,
+    const OptGltfMaterialOverride *resolved,
+    bool has_override,
+    bool legacy_emissive)
+{
+    const uint32_t legacy_flags =
+        has_override ? (resolved->flags & legacy_material_metadata_flags()) : 0u;
+    char *json = NULL;
+
+    if (legacy_flags && legacy_emissive) {
+        json = xprintf_dup(
+            "{\"aeronEmissiveMode\":\"legacy_srgb_srcalpha\","
+            "\"aeronLegacyMaterial\":{\"flags\":%u,"
+            "\"specularExponent\":%.9g,\"specularIntensity\":%.9g,"
+            "\"specularColorControl\":%.9g,\"specularValue\":%.9g,"
+            "\"ambient\":%.9g,\"normalScale\":%.9g,"
+            "\"lightnessBoost\":%.9g,\"saturationBoost\":%.9g,"
+            "\"shadeless\":%s}}",
+            (unsigned)legacy_flags,
+            resolved->legacy_specular_exponent,
+            resolved->legacy_specular_intensity,
+            resolved->legacy_specular_color_control,
+            resolved->legacy_specular_value,
+            resolved->legacy_ambient,
+            resolved->normal_scale,
+            resolved->legacy_lightness_boost,
+            resolved->legacy_saturation_boost,
+            resolved->legacy_shadeless ? "true" : "false");
+    } else if (legacy_flags) {
+        json = xprintf_dup(
+            "{\"aeronLegacyMaterial\":{\"flags\":%u,"
+            "\"specularExponent\":%.9g,\"specularIntensity\":%.9g,"
+            "\"specularColorControl\":%.9g,\"specularValue\":%.9g,"
+            "\"ambient\":%.9g,\"normalScale\":%.9g,"
+            "\"lightnessBoost\":%.9g,\"saturationBoost\":%.9g,"
+            "\"shadeless\":%s}}",
+            (unsigned)legacy_flags,
+            resolved->legacy_specular_exponent,
+            resolved->legacy_specular_intensity,
+            resolved->legacy_specular_color_control,
+            resolved->legacy_specular_value,
+            resolved->legacy_ambient,
+            resolved->normal_scale,
+            resolved->legacy_lightness_boost,
+            resolved->legacy_saturation_boost,
+            resolved->legacy_shadeless ? "true" : "false");
+    } else if (legacy_emissive) {
+        json = xstrdup(
+            "{\"aeronEmissiveMode\":\"legacy_srgb_srcalpha\"}");
+    } else {
+        return true;
+    }
+
+    if (!json)
+        return false;
+    material->extras.data = gb_keep_string(build, json);
+    return true;
+}
+
 /* Append bytes to the .bin buffer with 4-byte alignment as required by
  * the glTF accessor spec for component bounds. Returns the byte offset
  * where the data starts. */
@@ -934,7 +1009,27 @@ bool OptGltf_BuildMemory(const opt_file_t *opt,
         }
     }
 
-    const size_t image_total = (size_t)opt->texture_count + n_emissive;
+    size_t n_normal = 0;
+    if (options && options->material_overrides) {
+        for (int32_t i = 0; i < opt->texture_count; ++i) {
+            OptGltfMaterialOverride resolved = {0};
+            bool has_override = false;
+            if (!OptGltf_ResolveMaterialOverride(
+                    options->material_overrides,
+                    options->material_override_count,
+                    opt->textures[i].name, i,
+                    &resolved, &has_override, error)) {
+                goto fail;
+            }
+            if (has_override &&
+                (resolved.flags & OPT_GLTF_MATERIAL_OVERRIDE_NORMAL_IMAGE)) {
+                ++n_normal;
+            }
+        }
+    }
+
+    const size_t image_total =
+        (size_t)opt->texture_count + n_emissive + n_normal;
     build->images   = (cgltf_image   *)calloc(image_total ? image_total : 1, sizeof *build->images);
     build->textures = (cgltf_texture *)calloc(image_total ? image_total : 1, sizeof *build->textures);
     build->materials= (cgltf_material*)calloc(opt->texture_count + 1, sizeof *build->materials);
@@ -945,7 +1040,7 @@ bool OptGltf_BuildMemory(const opt_file_t *opt,
         fprintf(stderr, "opt2gltf: oom (textures)\n");
         goto fail;
     }
-    size_t emi = (size_t)opt->texture_count;   /* next emissive image/texture slot */
+    size_t emi = (size_t)opt->texture_count;   /* next auxiliary image/texture slot */
     for (int32_t i = 0; i < opt->texture_count; ++i) {
         const opt_texture_t *t = &opt->textures[i];
         uint8_t *rgba = decode_texture_rgba8(t, base_shade);
@@ -981,6 +1076,16 @@ bool OptGltf_BuildMemory(const opt_file_t *opt,
         mat->pbr_metallic_roughness.metallic_factor  = 0.0f;
         mat->pbr_metallic_roughness.roughness_factor = 1.0f;
         mat->pbr_metallic_roughness.base_color_texture.texture = &build->textures[i];
+
+        OptGltfMaterialOverride resolved_material_override = {0};
+        bool has_material_override = false;
+        if (!OptGltf_ResolveMaterialOverride(
+                options ? options->material_overrides : NULL,
+                options ? options->material_override_count : 0,
+                t->name, i, &resolved_material_override,
+                &has_material_override, error)) {
+            goto fail;
+        }
         if (!OptGltf_ApplyMaterialOverrides(
                 options ? options->material_overrides : NULL,
                 options ? options->material_override_count : 0,
@@ -1039,6 +1144,8 @@ bool OptGltf_BuildMemory(const opt_file_t *opt,
             mat->alpha_mode = cgltf_alpha_mode_blend;
         }
 
+        bool legacy_emissive = false;
+
         /* Emissive: self-illuminated texels (e.g. lit windows) get a second
          * texture holding their base color on black, wired as emissiveTexture
          * with a unit emissiveFactor. */
@@ -1065,10 +1172,62 @@ bool OptGltf_BuildMemory(const opt_file_t *opt,
                 mat->emissive_factor[2] = 1.0f;
                 /* Generic Aeron material mode: emissive alpha carries
                  * coverage for a legacy fixed-function sRGB/SRCALPHA pass. */
-                mat->extras.data = gb_keep_string(build,
-                    xstrdup("{\"aeronEmissiveMode\":\"legacy_srgb_srcalpha\"}"));
+                legacy_emissive = true;
                 emi++;
             }
+        }
+
+        if (has_material_override &&
+            (resolved_material_override.flags &
+             OPT_GLTF_MATERIAL_OVERRIDE_NORMAL_IMAGE)) {
+            const uint32_t normal_width =
+                resolved_material_override.normal_image.width;
+            const uint32_t normal_height =
+                resolved_material_override.normal_image.height;
+            if ((size_t)normal_width > SIZE_MAX / 4u / (size_t)normal_height) {
+                if (error) {
+                    snprintf(error->msg, sizeof error->msg,
+                             "normal image is too large for texture '%s'",
+                             t->name);
+                }
+                goto fail;
+            }
+            const size_t normal_bytes =
+                (size_t)normal_width * (size_t)normal_height * 4u;
+            uint8_t *normal_rgba = (uint8_t *)malloc(normal_bytes);
+            if (!normal_rgba)
+                goto fail;
+            memcpy(normal_rgba,
+                   resolved_material_override.normal_image.rgba8,
+                   normal_bytes);
+
+            char normal_png_rel[256];
+            snprintf(normal_png_rel, sizeof normal_png_rel,
+                     "textures/%s_Tex%02d_normal.png", basename, (int)i);
+            document->image_pixels[emi].rgba = normal_rgba;
+            document->image_pixels[emi].width = normal_width;
+            document->image_pixels[emi].height = normal_height;
+            build->images[emi].name = gb_keep_string(
+                build, xprintf_dup("Tex%02d_normal", (int)i));
+            build->images[emi].uri = gb_keep_string(
+                build, xstrdup(normal_png_rel));
+            build->images[emi].mime_type = "image/png";
+            build->textures[emi].image = &build->images[emi];
+            build->textures[emi].sampler = &build->sampler;
+            build->textures[emi].name = build->images[emi].name;
+            mat->normal_texture.texture = &build->textures[emi];
+            mat->normal_texture.scale =
+                (resolved_material_override.flags &
+                 OPT_GLTF_MATERIAL_OVERRIDE_NORMAL_SCALE)
+                    ? resolved_material_override.normal_scale
+                    : 1.0f;
+            ++emi;
+        }
+
+        if (!set_material_metadata(
+                build, mat, &resolved_material_override,
+                has_material_override, legacy_emissive)) {
+            goto fail;
         }
     }
     if (options && options->alpha_overrides) {
