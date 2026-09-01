@@ -13,6 +13,7 @@ on:
       - 'tools/opt2gltf/opt_material_override.h'
       - 'tools/opt2gltf/opt_material_override.c'
       - 'tests/opt_model_material_overrides_api_test.c'
+      - 'tests/opt_model_legacy_material_api_test.c'
       - 'tests/opt_material_override_match_test.c'
       - 'tests/opt_model_material_overrides_propagation_test.py'
       - '.github/workflows/xwau-material-overrides-test.yml'
@@ -36,6 +37,12 @@ jobs:
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -Iinclude \
             -fsyntax-only tests/opt_model_material_overrides_api_test.c
+
+      - name: Build legacy material public RED contract
+        shell: bash
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude \
+            -fsyntax-only tests/opt_model_legacy_material_api_test.c
 
       - name: Build focused matching/application RED contract
         shell: bash
