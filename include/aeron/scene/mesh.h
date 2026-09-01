@@ -2,7 +2,7 @@
 #define AERON_SCENE_SCENE_MESH_H
 
 /*
- * AeronSceneMesh — GPU-resident model for AeronScene3D.
+ * AeronSceneMesh â€” GPU-resident model for AeronScene3D.
  *
  * Uploads an AeronFlightModel render payload into scene-side
  * GPU resources: one merged VBO/IBO in the fixed AeronGltfVertex
@@ -24,7 +24,7 @@ extern "C" {
 
 /* Per-material entry the PBR fragment shader reads through per-mesh storage.
  * Mirrors HLSL packing (each line = one 16-byte slot). Sub-rect with
- * `zw == 0` means "channel absent for this material" — FS falls back
+ * `zw == 0` means "channel absent for this material" â€” FS falls back
  * to the matching factor. */
 typedef struct AeronPbrMaterialEntry {
 	float    base_rect[4];         /* atlas base_color sub-rect */
@@ -37,9 +37,11 @@ typedef struct AeronPbrMaterialEntry {
 	uint32_t flags;                /* bit 0=has_normal, 1=has_MR, 2=has_emissive,
 									* 3=alpha_blend (FS alpha = tex.a * factor.a),
 									* 4=legacy sRGB/SRCALPHA emissive mode,
-									* 5=alpha_mask */
+									* 5=alpha_mask, 6=legacy material, 7=legacy shadeless */
 	uint32_t _pad[3];
-} AeronPbrMaterialEntry; /* 128 B */
+	float    legacy_specular[4]; /* exponent, intensity, color control, value */
+	float    legacy_surface[4];  /* ambient, normal scale, lightness, saturation */
+} AeronPbrMaterialEntry; /* 160 B */
 
 /* Compact retained geometry for receiver-local effects such as decals.
  * It deliberately omits material data and tangents: projection only needs

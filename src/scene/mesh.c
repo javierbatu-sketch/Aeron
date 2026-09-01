@@ -1,5 +1,5 @@
 /*
- * AeronSceneMesh — GPU-resident model upload. See
+ * AeronSceneMesh â€” GPU-resident model upload. See
  * aeron/scene/mesh.h.
  */
 
@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef char AeronPbrMaterialEntrySizeCheck[sizeof(AeronPbrMaterialEntry) == 128 ? 1 : -1];
+typedef char AeronPbrMaterialEntrySizeCheck[sizeof(AeronPbrMaterialEntry) == 160 ? 1 : -1];
 
 static const char* channel_name(int c) {
 	static const char* names[AERON_GLTF_CHANNEL_COUNT] = { "base_color", "normal",
@@ -54,7 +54,7 @@ void AeronScene_MeshDestroy(AeronSceneMesh* m) {
 	free(m);
 }
 
-/* Copy factors and atlas transforms into the shader's 128-byte storage
+/* Copy factors and atlas transforms into the shader's 160-byte storage
  * record. The temporary array is released immediately after upload. */
 static uint32_t populate_material_entries(AeronPbrMaterialEntry* entries,
 										  const AeronGltfModel* src) {
@@ -80,6 +80,14 @@ static uint32_t populate_material_entries(AeronPbrMaterialEntry* entries,
 		e->metal_rough[0]     = m->metallic_factor;
 		e->metal_rough[1]     = m->roughness_factor;
 		e->metal_rough[2]     = m->alpha_cutoff;
+		e->legacy_specular[0] = m->legacy_specular_exponent;
+		e->legacy_specular[1] = m->legacy_specular_intensity;
+		e->legacy_specular[2] = m->legacy_specular_color_control;
+		e->legacy_specular[3] = m->legacy_specular_value;
+		e->legacy_surface[0]  = m->legacy_ambient;
+		e->legacy_surface[1]  = m->normal_scale;
+		e->legacy_surface[2]  = m->legacy_lightness_boost;
+		e->legacy_surface[3]  = m->legacy_saturation_boost;
 
 		/* flags mirror UV-xform scale presence (scale.xy > 0), matching
 		 * the FS sentinel: scale==0 means channel absent. */
@@ -102,6 +110,8 @@ static uint32_t populate_material_entries(AeronPbrMaterialEntry* entries,
 		if (m->alpha_mode == AERON_GLTF_ALPHA_MASK) {
 			flags |= 0x20u; /* FS: discard base alpha below metal_rough.z */
 		}
+		if (m->legacy_material) flags |= 0x40u;
+		if (m->legacy_shadeless) flags |= 0x80u;
 		e->flags = flags;
 	}
 	return n;

@@ -1,5 +1,5 @@
 /*
- * flight_gltf_mesh — cooked-.glb loader for OPT-derived ship assets.
+ * flight_gltf_mesh â€” cooked-.glb loader for OPT-derived ship assets.
  *
  * Consumes the output of `aeron_gltf_cook` (tools/gltf_cook/) which packs
  * artist-authored .gltf assets into a single .glb with four BC7/BC5 KTX2
@@ -80,6 +80,155 @@ static bool json_object_string_equals(const char *json, const char *key,
                          strcmp(value->valuestring, expected) == 0;
     cJSON_Delete(object);
     return matches;
+}
+
+
+enum {
+    AERON_GLTF_LEGACY_META_SPECULAR_EXPONENT      = 1u << 2,
+    AERON_GLTF_LEGACY_META_SPECULAR_INTENSITY     = 1u << 3,
+    AERON_GLTF_LEGACY_META_SPECULAR_COLOR_CONTROL = 1u << 4,
+    AERON_GLTF_LEGACY_META_SPECULAR_VALUE         = 1u << 5,
+    AERON_GLTF_LEGACY_META_AMBIENT                = 1u << 6,
+    AERON_GLTF_LEGACY_META_NORMAL_SCALE           = 1u << 7,
+    AERON_GLTF_LEGACY_META_LIGHTNESS_BOOST        = 1u << 8,
+    AERON_GLTF_LEGACY_META_SATURATION_BOOST       = 1u << 9,
+    AERON_GLTF_LEGACY_META_SHADELESS              = 1u << 10,
+};
+
+static bool json_object_u32(const cJSON *object, const char *key,
+                            uint32_t *out)
+{
+    const cJSON *value = cJSON_IsObject(object)
+        ? cJSON_GetObjectItemCaseSensitive(object, key) : NULL;
+    if (!cJSON_IsNumber(value) || !isfinite(value->valuedouble) ||
+        value->valuedouble < 0.0 ||
+        value->valuedouble > (double)UINT32_MAX ||
+        floor(value->valuedouble) != value->valuedouble) {
+        return false;
+    }
+    *out = (uint32_t)value->valuedouble;
+    return true;
+}
+
+static bool json_object_finite_float(const cJSON *object, const char *key,
+                                     float *out)
+{
+    const cJSON *value = cJSON_IsObject(object)
+        ? cJSON_GetObjectItemCaseSensitive(object, key) : NULL;
+    if (!cJSON_IsNumber(value) || !isfinite(value->valuedouble))
+        return false;
+
+    const float converted = (float)value->valuedouble;
+    if (!isfinite(converted))
+        return false;
+
+    *out = converted;
+    return true;
+}
+
+static bool read_legacy_material_metadata(const char *json,
+                                          AeronGltfMaterial *out)
+{
+    if (!json)
+        return true;
+
+    cJSON *root = cJSON_ParseWithOpts(json, NULL, true);
+    if (!root)
+        return false;
+
+    const cJSON *legacy = cJSON_IsObject(root)
+        ? cJSON_GetObjectItemCaseSensitive(root, "aeronLegacyMaterial")
+        : NULL;
+    if (!legacy) {
+        cJSON_Delete(root);
+        return true;
+    }
+    if (!cJSON_IsObject(legacy)) {
+        cJSON_Delete(root);
+        return false;
+    }
+
+    uint32_t flags = 0;
+    if (!json_object_u32(legacy, "flags", &flags)) {
+        cJSON_Delete(root);
+        return false;
+    }
+
+    const uint32_t known_flags =
+        AERON_GLTF_LEGACY_META_SPECULAR_EXPONENT |
+        AERON_GLTF_LEGACY_META_SPECULAR_INTENSITY |
+        AERON_GLTF_LEGACY_META_SPECULAR_COLOR_CONTROL |
+        AERON_GLTF_LEGACY_META_SPECULAR_VALUE |
+        AERON_GLTF_LEGACY_META_AMBIENT |
+        AERON_GLTF_LEGACY_META_NORMAL_SCALE |
+        AERON_GLTF_LEGACY_META_LIGHTNESS_BOOST |
+        AERON_GLTF_LEGACY_META_SATURATION_BOOST |
+        AERON_GLTF_LEGACY_META_SHADELESS;
+
+    const uint32_t legacy_flags = flags & known_flags;
+    out->legacy_material = legacy_flags != 0u ? 1u : 0u;
+
+    if ((legacy_flags & AERON_GLTF_LEGACY_META_SPECULAR_EXPONENT) &&
+        !json_object_finite_float(
+            legacy, "specularExponent", &out->legacy_specular_exponent)) {
+        cJSON_Delete(root);
+        return false;
+    }
+    if ((legacy_flags & AERON_GLTF_LEGACY_META_SPECULAR_INTENSITY) &&
+        !json_object_finite_float(
+            legacy, "specularIntensity", &out->legacy_specular_intensity)) {
+        cJSON_Delete(root);
+        return false;
+    }
+    if ((legacy_flags & AERON_GLTF_LEGACY_META_SPECULAR_COLOR_CONTROL) &&
+        !json_object_finite_float(
+            legacy, "specularColorControl",
+            &out->legacy_specular_color_control)) {
+        cJSON_Delete(root);
+        return false;
+    }
+    if ((legacy_flags & AERON_GLTF_LEGACY_META_SPECULAR_VALUE) &&
+        !json_object_finite_float(
+            legacy, "specularValue", &out->legacy_specular_value)) {
+        cJSON_Delete(root);
+        return false;
+    }
+    if ((legacy_flags & AERON_GLTF_LEGACY_META_AMBIENT) &&
+        !json_object_finite_float(
+            legacy, "ambient", &out->legacy_ambient)) {
+        cJSON_Delete(root);
+        return false;
+    }
+    if ((legacy_flags & AERON_GLTF_LEGACY_META_NORMAL_SCALE) &&
+        !json_object_finite_float(
+            legacy, "normalScale", &out->normal_scale)) {
+        cJSON_Delete(root);
+        return false;
+    }
+    if ((legacy_flags & AERON_GLTF_LEGACY_META_LIGHTNESS_BOOST) &&
+        !json_object_finite_float(
+            legacy, "lightnessBoost", &out->legacy_lightness_boost)) {
+        cJSON_Delete(root);
+        return false;
+    }
+    if ((legacy_flags & AERON_GLTF_LEGACY_META_SATURATION_BOOST) &&
+        !json_object_finite_float(
+            legacy, "saturationBoost", &out->legacy_saturation_boost)) {
+        cJSON_Delete(root);
+        return false;
+    }
+    if (legacy_flags & AERON_GLTF_LEGACY_META_SHADELESS) {
+        const cJSON *value =
+            cJSON_GetObjectItemCaseSensitive(legacy, "shadeless");
+        if (!cJSON_IsTrue(value) && !cJSON_IsFalse(value)) {
+            cJSON_Delete(root);
+            return false;
+        }
+        out->legacy_shadeless = cJSON_IsTrue(value) ? 1u : 0u;
+    }
+
+    cJSON_Delete(root);
+    return true;
 }
 
 static bool node_has_flight_role(const cgltf_node *node, const char *expected)
@@ -198,7 +347,7 @@ static bool copy_channel_ktx2(const cgltf_data *data,
 /* ===== Per-material read ============================================
  *
  * Pulls factors + per-channel UV transform out of cgltf_material.
- * Channel ordering matches AERON_GLTF_CHANNEL_* — keep in sync with
+ * Channel ordering matches AERON_GLTF_CHANNEL_* â€” keep in sync with
  * the cooker and the FS. */
 static const cgltf_texture_view *material_channel_view(
     const cgltf_material *m, int channel)
@@ -233,7 +382,17 @@ static bool read_material(const cgltf_material *m, AeronGltfMaterial *out)
     out->alpha_mode           = AERON_GLTF_ALPHA_OPAQUE;
     out->alpha_cutoff         = 0.5f;
     out->emissive_mode        = AERON_GLTF_EMISSIVE_ADDITIVE;
-    /* uv_xform sentinel zero = "channel not authored" — FS falls back
+    out->legacy_material      = 0u;
+    out->legacy_specular_exponent = 0.0f;
+    out->legacy_specular_intensity = 0.0f;
+    out->legacy_specular_color_control = 0.0f;
+    out->legacy_specular_value = 0.0f;
+    out->legacy_ambient       = 0.0f;
+    out->normal_scale         = 0.0f;
+    out->legacy_lightness_boost = 0.0f;
+    out->legacy_saturation_boost = 0.0f;
+    out->legacy_shadeless     = 0u;
+    /* uv_xform sentinel zero = "channel not authored" â€” FS falls back
      * to factor. Overwritten below for channels that do bind. */
     memset(out->uv_xform, 0, sizeof out->uv_xform);
 
@@ -260,6 +419,9 @@ static bool read_material(const cgltf_material *m, AeronGltfMaterial *out)
                                   "legacy_srgb_srcalpha")) {
         out->emissive_mode = AERON_GLTF_EMISSIVE_LEGACY_SRGB_SRCALPHA;
     }
+
+    if (!read_legacy_material_metadata(m->extras.data, out))
+        return false;
 
     if (m->has_pbr_metallic_roughness) {
         const cgltf_pbr_metallic_roughness *pbr = &m->pbr_metallic_roughness;
@@ -357,7 +519,7 @@ static bool append_primitive_vertices(
     }
     free(positions); free(normals); free(uvs); free(tangents);
 
-    /* Indices — biased to the primitive's range inside the ship's
+    /* Indices â€” biased to the primitive's range inside the ship's
      * merged buffer. */
     uint16_t *dst_idx = indices + ioff;
     for (uint32_t i = 0; i < icount; i++) {

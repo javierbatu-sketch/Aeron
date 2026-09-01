@@ -23,6 +23,8 @@ static const uint GLTF_MATERIAL_HAS_EMISSIVE = 0x4u;
 static const uint GLTF_MATERIAL_ALPHA_BLEND = 0x8u;
 static const uint GLTF_MATERIAL_LEGACY_EMISSIVE = 0x10u;
 static const uint GLTF_MATERIAL_ALPHA_MASK = 0x20u;
+static const uint GLTF_MATERIAL_LEGACY = 0x40u;
+static const uint GLTF_MATERIAL_LEGACY_SHADELESS = 0x80u;
 
 struct GltfMaterial
 {
@@ -35,6 +37,8 @@ struct GltfMaterial
     float4 metal_rough; /* x=metallic, y=roughness, z=alpha cutoff */
     uint   flags;
     uint3  _pad;
+    float4 legacy_specular;
+    float4 legacy_surface;
 };
 
 StructuredBuffer<GltfMaterial> g_materials
@@ -73,6 +77,8 @@ GltfMaterial pbr_default_material()
     material.metal_rough = float4(0, 1, 0.5f, 0);
     material.flags = 0u;
     material._pad = uint3(0, 0, 0);
+    material.legacy_specular = float4(0, 0, 0, 0);
+    material.legacy_surface = float4(0, 0, 0, 0);
     return material;
 }
 
