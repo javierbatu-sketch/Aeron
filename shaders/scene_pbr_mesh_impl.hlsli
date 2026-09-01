@@ -76,6 +76,95 @@ float3 detailed_environment(float3 world_direction)
 }
 
 
+
+float3 legacy_scale_normal(float3 tangent_normal, float normal_scale)
+{
+    float3 neutral = float3(0.0f, 0.0f, 1.0f);
+    return normalize(neutral + normal_scale * (tangent_normal - neutral));
+}
+
+float3 legacy_rgb_to_hsv(float3 color)
+{
+    float max_channel = max(color.r, max(color.g, color.b));
+    float min_channel = min(color.r, min(color.g, color.b));
+    float delta = max_channel - min_channel;
+    float hue = 0.0f;
+
+    if (delta > 1.0e-8f) {
+        if (max_channel == color.r) {
+            hue = (color.g - color.b) / delta;
+        } else if (max_channel == color.g) {
+            hue = 2.0f + (color.b - color.r) / delta;
+        } else {
+            hue = 4.0f + (color.r - color.g) / delta;
+        }
+        hue *= (1.0f / 6.0f);
+        if (hue < 0.0f) {
+            hue += 1.0f;
+        }
+    }
+
+    float saturation = max_channel != 0.0f ? delta / max_channel : 0.0f;
+    return float3(hue, saturation, max_channel);
+}
+
+float3 legacy_hsv_to_rgb(float3 hsv)
+{
+    float h = frac(hsv.x) * 6.0f;
+    int sector = (int)floor(h);
+    float f = h - (float)sector;
+
+    float p = hsv.z * (1.0f - hsv.y);
+    float q = hsv.z * (1.0f - hsv.y * f);
+    float t = hsv.z * (1.0f - hsv.y * (1.0f - f));
+
+    sector = sector % 6;
+    if (sector < 0) {
+        sector += 6;
+    }
+
+    if (sector == 0) return float3(hsv.z, t, p);
+    if (sector == 1) return float3(q, hsv.z, p);
+    if (sector == 2) return float3(p, hsv.z, t);
+    if (sector == 3) return float3(p, q, hsv.z);
+    if (sector == 4) return float3(t, p, hsv.z);
+    return float3(hsv.z, p, q);
+}
+
+float3 legacy_specular_color(float3 base_color, float metallic,
+                             float specular_value, float lightness_boost,
+                             float saturation_boost, out float diffuse_scale)
+{
+    if (metallic < 1.1f) {
+        float3 hsv = legacy_rgb_to_hsv(base_color);
+        float specular_saturation = hsv.y * metallic * saturation_boost;
+        float specular_lightness =
+            hsv.z * lightness_boost + specular_value * (1.0f - metallic);
+        diffuse_scale = 1.0f - 2.0f * metallic;
+        return legacy_hsv_to_rgb(
+            float3(hsv.x, specular_saturation, specular_lightness));
+    }
+
+    diffuse_scale = 1.0f;
+    return float3(1.0f, 1.0f, 1.0f);
+}
+
+float3 legacy_specular_lobe(float3 N, float3 V, float3 L,
+                            float3 specular_color, float specular_exponent,
+                            float specular_intensity)
+{
+    float3 H = normalize(L + V);
+    float lobe =
+        pow(max(dot(N, H), 0.0f), specular_exponent) * specular_intensity;
+    return specular_color * lobe;
+}
+
+float3 legacy_apply_ambient(float3 lit, float3 base_color, float ambient)
+{
+    return lit + ambient * (base_color - lit);
+}
+
+
 struct FSOut
 {
     float4 color : SV_Target0;
@@ -123,6 +212,9 @@ FSOut main(PbrForwardVSOut i, bool is_front : SV_IsFrontFace)
                                    i.uv, m.normal_rect).rgb * 2.0f - 1.0f;
         float  nz   = sqrt(saturate(1.0f - dot(ntex.xy, ntex.xy)));
         float3 nt   = float3(ntex.xy, max(ntex.z, nz));
+        if ((m.flags & GLTF_MATERIAL_LEGACY) != 0u) {
+            nt = legacy_scale_normal(nt, m.legacy_surface.y);
+        }
         float3 T    = normalize(i.world_tangent);
         float3 B    = normalize(cross(N_geom, T)) * i.tangent_sign;
         N = normalize(T * nt.x + B * nt.y + N_geom * nt.z);
@@ -182,65 +274,93 @@ FSOut main(PbrForwardVSOut i, bool is_front : SV_IsFrontFace)
         ((sun_color * lambert_term * shadow_visibility + extra_rgb) * ao_direct + ambient_rgb * ao +
          i.local_rgb);
 
-    /* ===== Metallic-roughness ==================================== */
+    /* ===== Generic legacy / metallic-roughness =================== */
+    bool legacy_material =
+        (m.flags & GLTF_MATERIAL_LEGACY) != 0u;
+    bool legacy_shadeless =
+        (m.flags & GLTF_MATERIAL_LEGACY_SHADELESS) != 0u;
+
     PbrMaterialParams mp;
     mp.spec_intensity = 1.0f;
     mp.roughness      = m.metal_rough.y;
     mp.F0             = float3(0.04f, 0.04f, 0.04f);
     mp.albedo         = albedo;
-    float metallic = m.metal_rough.x;
-    if ((m.flags & GLTF_MATERIAL_HAS_METALLIC_ROUGHNESS) != 0u) {
-        float3 mr = atlas_sample(g_mr, g_mr_sampler, i.uv, m.mr_rect).rgb;
-        mp.roughness = mr.g * m.metal_rough.y;
-        metallic     = mr.b * m.metal_rough.x;
-    }
-    mp.roughness = max(mp.roughness, 0.045f);
-    mp.F0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
-    base_rgb *= (1.0f - metallic);
 
-    /* ===== Cook-Torrance specular ================================
-     * Geometric-aware shading-normal adaptation. The Gouraud / normal-
-     * mapped shading normal N can tilt toward or below the view horizon
-     * on low-poly legacy meshes (the 1998 OPT normals deviate up to ~60°
-     * from the face), where it is untrustworthy. There the microfacet
-     * term D·G·F/(4·N·V) holds a finite grazing value as N·V→0⁺ and then
-     * `saturate(N·V)` clips it to zero — a hard N·V=0 ring on a flat face.
-     *
-     * Fix: derive the geometric face normal from screen-space derivatives
-     * of world_pos and blend N toward it as N·V→0. Where the shading
-     * normal is sub-horizon (untrusted) specular reflects the real flat
-     * surface instead of ringing; where the geometry itself grazes (true
-     * silhouette) the geometric normal grazes too, so a legitimate
-     * Fresnel rim survives. Specular only — diffuse/ambient keep N. */
-    float3 N_spec = N;
+    float metallic = m.metal_rough.x;
+    float G_term = 0.0f;
+    float3 spec_rgb = float3(0.0f, 0.0f, 0.0f);
+
+    if (legacy_material) {
+        if (!legacy_shadeless) {
+            float diffuse_scale = 1.0f;
+            float3 legacy_spec_color = legacy_specular_color(
+                albedo, m.legacy_specular.z, m.legacy_specular.w,
+                m.legacy_surface.z, m.legacy_surface.w, diffuse_scale);
+
+            base_rgb *= diffuse_scale;
+            spec_rgb =
+                legacy_specular_lobe(
+                    N, V, L, legacy_spec_color,
+                    m.legacy_specular.x, m.legacy_specular.y)
+                * sun_color * shadow_visibility;
+
+            /* Keep existing punctual-light diffuse contribution, but
+             * suppress Aeron's Cook-Torrance specular for a legacy
+             * material. A legacy punctual-specular law is not invented
+             * without reference evidence. */
+            if (fs_cluster_point_count > 0u) {
+                PbrMaterialParams legacy_point_mp = mp;
+                legacy_point_mp.spec_intensity = 0.0f;
+                legacy_point_mp.roughness = 1.0f;
+                legacy_point_mp.F0 = float3(0.0f, 0.0f, 0.0f);
+                float3 point_spec_unused = float3(0.0f, 0.0f, 0.0f);
+                float3 point_diff = accumulate_point_lights(
+                    N, N, V, i.world_pos, i.position.xy, legacy_point_mp,
+                    0.0f, point_spec_unused);
+                base_rgb += albedo * diffuse_scale * point_diff;
+            }
+        }
+    } else {
+        if ((m.flags & GLTF_MATERIAL_HAS_METALLIC_ROUGHNESS) != 0u) {
+            float3 mr = atlas_sample(
+                g_mr, g_mr_sampler, i.uv, m.mr_rect).rgb;
+            mp.roughness = mr.g * m.metal_rough.y;
+            metallic     = mr.b * m.metal_rough.x;
+        }
+        mp.roughness = max(mp.roughness, 0.045f);
+        mp.F0 = lerp(float3(0.04f, 0.04f, 0.04f), albedo, metallic);
+        base_rgb *= (1.0f - metallic);
+
+        float3 N_spec = N;
 #if AERON_PBR_DEBUG_VIEWS
-    if (spec_geom_adapt != 0.0f) {
-        N_spec = normalize(lerp(N_face, N, smoothstep(0.0f, 0.2f, dot(N, V))));
-    }
+        if (spec_geom_adapt != 0.0f) {
+            N_spec = normalize(
+                lerp(N_face, N, smoothstep(0.0f, 0.2f, dot(N, V))));
+        }
 #else
-    N_spec = normalize(lerp(N_face, N, smoothstep(0.0f, 0.2f, dot(N, V))));
+        N_spec = normalize(
+            lerp(N_face, N, smoothstep(0.0f, 0.2f, dot(N, V))));
 #endif
 
-    /* No explicit N·L gate: cook_torrance_spec's Smith G_L term already
-     * drives specular to zero as N·L→0, so the dark side is handled
-     * without a redundant smoothstep on the terminator. */
-    float  G_term;
-    float3 spec_brdf = cook_torrance_spec(N_spec, V, L, mp, G_term);
-    float3 spec_rgb  = spec_brdf
-                     * (sun_color * mp.spec_intensity * global_spec_mul)
-                     * shadow_visibility;
+        float3 spec_brdf = cook_torrance_spec(N_spec, V, L, mp, G_term);
+        spec_rgb = spec_brdf
+                 * (sun_color * mp.spec_intensity * global_spec_mul)
+                 * shadow_visibility;
 
-    /* Clustered punctual lights (laser bolts, explosions, engine
-     * glows): windowed classic 1/d attenuation, Lambert diffuse + per-light
-     * spec. Untouched by AO like the per-instance local lights. */
-    if (fs_cluster_point_count > 0u) {
-        float3 point_diff = accumulate_point_lights(N, N_spec, V, i.world_pos,
-                                                    i.position.xy, mp,
-                                                    global_spec_mul, spec_rgb);
-        base_rgb += albedo * (1.0f - metallic) * point_diff;
+        if (fs_cluster_point_count > 0u) {
+            float3 point_diff = accumulate_point_lights(
+                N, N_spec, V, i.world_pos, i.position.xy, mp,
+                global_spec_mul, spec_rgb);
+            base_rgb += albedo * (1.0f - metallic) * point_diff;
+        }
     }
 
     float3 lit = base_rgb + spec_rgb;
+    if (legacy_shadeless) {
+        lit = albedo;
+    } else if (legacy_material) {
+        lit = legacy_apply_ambient(lit, albedo, m.legacy_surface.x);
+    }
 
     if (fs_cluster_debug_view != 0u && fs_cluster_enabled != 0u) {
         _out.color = float4(clustered_light_debug_color(i.position.xy, i.world_pos), 1.0f);
