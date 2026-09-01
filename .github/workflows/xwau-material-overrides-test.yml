@@ -1,0 +1,56 @@
+name: XWAU-004 generic material overrides
+
+on:
+  push:
+    branches:
+      - xwau-004-material-overrides
+  pull_request:
+    paths:
+      - 'include/aeron/asset/opt_model.h'
+      - 'src/asset/opt_model.c'
+      - 'tools/opt2gltf/opt2gltf.h'
+      - 'tools/opt2gltf/opt2gltf.c'
+      - 'tools/opt2gltf/opt_material_override.h'
+      - 'tools/opt2gltf/opt_material_override.c'
+      - 'tests/opt_model_material_overrides_api_test.c'
+      - 'tests/opt_material_override_match_test.c'
+      - 'tests/opt_model_material_overrides_propagation_test.py'
+      - '.github/workflows/xwau-material-overrides-test.yml'
+
+jobs:
+  focused:
+    name: generic OPT material override contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Keep existing atlas API contract green
+        shell: bash
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude \
+            -fsyntax-only tests/opt_model_atlas_options_test.c
+          python3 tests/opt_model_atlas_propagation_test.py
+
+      - name: Build public material override RED contract
+        shell: bash
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude \
+            -fsyntax-only tests/opt_model_material_overrides_api_test.c
+
+      - name: Build focused matching/application RED contract
+        shell: bash
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror \
+            -Itools/opt2gltf -Ithird_party/cgltf \
+            tests/opt_material_override_match_test.c \
+            tools/opt2gltf/opt_material_override.c \
+            -lm \
+            -o opt_material_override_match_test
+
+      - name: Run focused matching/application contract
+        shell: bash
+        run: ./opt_material_override_match_test
+
+      - name: Verify propagation through OPT conversion
+        shell: bash
+        run: python3 tests/opt_model_material_overrides_propagation_test.py
