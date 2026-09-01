@@ -17,6 +17,7 @@ on:
       - 'tests/opt_material_legacy_override_test.c'
       - 'tests/opt_material_override_match_test.c'
       - 'tests/opt_model_material_overrides_propagation_test.py'
+      - 'tests/gltf_legacy_material_contract_test.py'
       - '.github/workflows/xwau-material-overrides-test.yml'
 
 jobs:
@@ -52,6 +53,10 @@ jobs:
       - name: Run legacy material resolver RED contract
         shell: bash
         run: ./opt_material_legacy_override_test
+
+      - name: Verify legacy glTF material RED contract
+        shell: bash
+        run: python3 tests/gltf_legacy_material_contract_test.py
 
       - name: Build legacy material public RED contract
         shell: bash
