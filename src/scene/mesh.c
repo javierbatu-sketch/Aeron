@@ -1,5 +1,5 @@
 /*
- * AeronSceneMesh â€” GPU-resident model upload. See
+ * AeronSceneMesh — GPU-resident model upload. See
  * aeron/scene/mesh.h.
  */
 

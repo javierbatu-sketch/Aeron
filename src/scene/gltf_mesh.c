@@ -1,5 +1,5 @@
 /*
- * flight_gltf_mesh â€” cooked-.glb loader for OPT-derived ship assets.
+ * flight_gltf_mesh — cooked-.glb loader for OPT-derived ship assets.
  *
  * Consumes the output of `aeron_gltf_cook` (tools/gltf_cook/) which packs
  * artist-authored .gltf assets into a single .glb with four BC7/BC5 KTX2
@@ -347,7 +347,7 @@ static bool copy_channel_ktx2(const cgltf_data *data,
 /* ===== Per-material read ============================================
  *
  * Pulls factors + per-channel UV transform out of cgltf_material.
- * Channel ordering matches AERON_GLTF_CHANNEL_* â€” keep in sync with
+ * Channel ordering matches AERON_GLTF_CHANNEL_* — keep in sync with
  * the cooker and the FS. */
 static const cgltf_texture_view *material_channel_view(
     const cgltf_material *m, int channel)
@@ -392,7 +392,7 @@ static bool read_material(const cgltf_material *m, AeronGltfMaterial *out)
     out->legacy_lightness_boost = 0.0f;
     out->legacy_saturation_boost = 0.0f;
     out->legacy_shadeless     = 0u;
-    /* uv_xform sentinel zero = "channel not authored" â€” FS falls back
+    /* uv_xform sentinel zero = "channel not authored" — FS falls back
      * to factor. Overwritten below for channels that do bind. */
     memset(out->uv_xform, 0, sizeof out->uv_xform);
 
@@ -519,7 +519,7 @@ static bool append_primitive_vertices(
     }
     free(positions); free(normals); free(uvs); free(tangents);
 
-    /* Indices â€” biased to the primitive's range inside the ship's
+    /* Indices — biased to the primitive's range inside the ship's
      * merged buffer. */
     uint16_t *dst_idx = indices + ioff;
     for (uint32_t i = 0; i < icount; i++) {

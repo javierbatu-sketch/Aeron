@@ -11,7 +11,7 @@
  * `KHR_texture_basisu`. Each material's texture bindings carry a
  * `KHR_texture_transform` that remaps material-local UVs into the
  * material's sub-rect inside its channel atlas. No PNG decoding or
- * software atlas packing happens at runtime â€” the loader just lifts
+ * software atlas packing happens at runtime — the loader just lifts
  * the KTX2 blobs out of the BIN chunk and reads the per-binding UV
  * transform off cgltf.
  *
@@ -67,7 +67,7 @@ typedef struct AeronGltfVertex {
 
 /* ===== Channel slots ================================================
  *
- * Channel ordering â€” keep in sync with the cooker, the SDL_GPU
+ * Channel ordering — keep in sync with the cooker, the SDL_GPU
  * pipeline's texture register slots, and the FS sampling order. */
 #define AERON_GLTF_CHANNEL_BASE_COLOR         0
 #define AERON_GLTF_CHANNEL_NORMAL             1
@@ -117,7 +117,7 @@ typedef enum AeronGltfAlphaMode {
  * applies:
  *     atlas_uv = vertex_uv * scale + offset
  * before sampling channel `c`'s atlas. Sentinel `scale_u == 0` (or
- * scale_v == 0) means "material doesn't author this channel" â€” FS
+ * scale_v == 0) means "material doesn't author this channel" — FS
  * falls back to the per-material factor. */
 typedef struct AeronGltfMaterial {
     float    base_color_factor[4];   /* RGBA, default (1,1,1,1) */
@@ -155,14 +155,14 @@ typedef struct AeronGltfMaterial {
  * The renderer issues one indexed draw per instance.
  *
  * `prim_variant_material` is the [total_prim_count][variant_slots]
- * resolution table â€” row prim, column variant_idx. variant_slots is
+ * resolution table — row prim, column variant_idx. variant_slots is
  * max(variant_count, 1) so ships without KHR_materials_variants still
  * have a column 0 holding the default material. AERON_GLTF_NO_MATERIAL
  * in a slot means "no material" (renderer skips fragments via factor-
  * only fallback). Mesh creation transposes this source table into
  * variant-major packed storage; each draw selects a row by index. */
 typedef struct AeronGltfModel {
-    /* Merged geometry â€” one buffer per ship. The index buffer contains
+    /* Merged geometry — one buffer per ship. The index buffer contains
      * stable opaque, alpha-mask, and alpha-blend ranges in that order. */
     AeronGltfVertex *vertices;     uint32_t vertex_count;
     uint16_t         *indices;      uint32_t index_count;
@@ -179,7 +179,7 @@ typedef struct AeronGltfModel {
     uint32_t            material_count;
     AeronGltfMaterial *materials;   /* sized [material_count] */
 
-    /* Variant table â€” flat [total_prim_count * variant_slots] row-
+    /* Variant table — flat [total_prim_count * variant_slots] row-
      * major, indexed (prim_id * variant_slots + variant_idx). */
     uint32_t  variant_count;     /* asset-level KHR count, 0 = none */
     uint32_t  variant_slots;     /* max(variant_count, 1) */
