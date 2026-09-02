@@ -634,6 +634,7 @@ add_library(aeron_cjson STATIC
 target_include_directories(aeron_cjson PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cjson
 )
+target_compile_definitions(aeron_cjson PRIVATE ENABLE_LOCALES)
 set_target_properties(aeron_cjson PROPERTIES
     C_STANDARD 99
     C_STANDARD_REQUIRED ON

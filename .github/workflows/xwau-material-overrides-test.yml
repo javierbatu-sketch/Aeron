@@ -14,6 +14,8 @@ on:
       - 'tools/opt2gltf/opt_material_override.c'
       - 'include/aeron/scene/gltf_mesh.h'
       - 'src/scene/gltf_mesh.c'
+      - 'CMakeLists.txt'
+      - 'third_party/cjson/cJSON.c'
       - 'include/aeron/scene/mesh.h'
       - 'src/scene/mesh.c'
       - 'shaders/scene_pbr_material_alpha.hlsli'
@@ -25,6 +27,8 @@ on:
       - 'tests/opt_material_override_match_test.c'
       - 'tests/opt_model_material_overrides_propagation_test.py'
       - 'tests/gltf_legacy_material_contract_test.py'
+      - 'tests/cjson_locale_build_contract_test.py'
+      - 'tests/cjson_decimal_comma_contract_test.c'
       - 'tests/gltf_legacy_material_loader_gpu_contract_test.py'
       - 'tests/pbr_legacy_material_shader_layout_test.py'
       - 'tests/pbr_legacy_material_shading_contract_test.py'
@@ -37,6 +41,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      - name: Verify cJSON locale build wiring
+        shell: bash
+        run: python3 tests/cjson_locale_build_contract_test.py
+
+      - name: Verify cJSON decimal-comma parsing deterministically
+        shell: bash
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror \
+            -Dstrtod=xwau_test_strtod -Dlocaleconv=xwau_test_localeconv \
+            -Ithird_party/cjson \
+            tests/cjson_decimal_comma_contract_test.c \
+            third_party/cjson/cJSON.c -lm -o cjson_locale_off_test
+          ./cjson_locale_off_test reject
+          gcc -std=c11 -Wall -Wextra -Werror \
+            -DENABLE_LOCALES \
+            -Dstrtod=xwau_test_strtod -Dlocaleconv=xwau_test_localeconv \
+            -Ithird_party/cjson \
+            tests/cjson_decimal_comma_contract_test.c \
+            third_party/cjson/cJSON.c -lm -o cjson_locale_on_test
+          ./cjson_locale_on_test accept
 
       - name: Keep existing atlas API contract green
         shell: bash
