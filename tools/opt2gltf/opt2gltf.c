@@ -11,6 +11,7 @@
 #include "opt.h"
 #include "aeron/log.h"
 #include "aeron/mesh_normals.h"
+#include "aeron/numeric.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -360,43 +361,56 @@ static bool set_material_metadata(
     const uint32_t legacy_flags =
         has_override ? (resolved->flags & legacy_material_metadata_flags()) : 0u;
     char *json = NULL;
+    char legacy_numbers[8][32];
+
+    if (legacy_flags) {
+        const double values[8] = {
+            (double)resolved->legacy_specular_exponent,
+            (double)resolved->legacy_specular_intensity,
+            (double)resolved->legacy_specular_color_control,
+            (double)resolved->legacy_specular_value,
+            (double)resolved->legacy_ambient,
+            (double)resolved->normal_scale,
+            (double)resolved->legacy_lightness_boost,
+            (double)resolved->legacy_saturation_boost,
+        };
+        for (size_t index = 0; index < 8; ++index) {
+            if (!Aeron_FormatAsciiDouble(
+                    legacy_numbers[index], sizeof legacy_numbers[index],
+                    values[index], 9)) {
+                return false;
+            }
+        }
+    }
 
     if (legacy_flags && legacy_emissive) {
         json = xprintf_dup(
             "{\"aeronEmissiveMode\":\"legacy_srgb_srcalpha\","
             "\"aeronLegacyMaterial\":{\"flags\":%u,"
-            "\"specularExponent\":%.9g,\"specularIntensity\":%.9g,"
-            "\"specularColorControl\":%.9g,\"specularValue\":%.9g,"
-            "\"ambient\":%.9g,\"normalScale\":%.9g,"
-            "\"lightnessBoost\":%.9g,\"saturationBoost\":%.9g,"
+            "\"specularExponent\":%s,\"specularIntensity\":%s,"
+            "\"specularColorControl\":%s,\"specularValue\":%s,"
+            "\"ambient\":%s,\"normalScale\":%s,"
+            "\"lightnessBoost\":%s,\"saturationBoost\":%s,"
             "\"shadeless\":%s}}",
             (unsigned)legacy_flags,
-            resolved->legacy_specular_exponent,
-            resolved->legacy_specular_intensity,
-            resolved->legacy_specular_color_control,
-            resolved->legacy_specular_value,
-            resolved->legacy_ambient,
-            resolved->normal_scale,
-            resolved->legacy_lightness_boost,
-            resolved->legacy_saturation_boost,
+            legacy_numbers[0], legacy_numbers[1],
+            legacy_numbers[2], legacy_numbers[3],
+            legacy_numbers[4], legacy_numbers[5],
+            legacy_numbers[6], legacy_numbers[7],
             resolved->legacy_shadeless ? "true" : "false");
     } else if (legacy_flags) {
         json = xprintf_dup(
             "{\"aeronLegacyMaterial\":{\"flags\":%u,"
-            "\"specularExponent\":%.9g,\"specularIntensity\":%.9g,"
-            "\"specularColorControl\":%.9g,\"specularValue\":%.9g,"
-            "\"ambient\":%.9g,\"normalScale\":%.9g,"
-            "\"lightnessBoost\":%.9g,\"saturationBoost\":%.9g,"
+            "\"specularExponent\":%s,\"specularIntensity\":%s,"
+            "\"specularColorControl\":%s,\"specularValue\":%s,"
+            "\"ambient\":%s,\"normalScale\":%s,"
+            "\"lightnessBoost\":%s,\"saturationBoost\":%s,"
             "\"shadeless\":%s}}",
             (unsigned)legacy_flags,
-            resolved->legacy_specular_exponent,
-            resolved->legacy_specular_intensity,
-            resolved->legacy_specular_color_control,
-            resolved->legacy_specular_value,
-            resolved->legacy_ambient,
-            resolved->normal_scale,
-            resolved->legacy_lightness_boost,
-            resolved->legacy_saturation_boost,
+            legacy_numbers[0], legacy_numbers[1],
+            legacy_numbers[2], legacy_numbers[3],
+            legacy_numbers[4], legacy_numbers[5],
+            legacy_numbers[6], legacy_numbers[7],
             resolved->legacy_shadeless ? "true" : "false");
     } else if (legacy_emissive) {
         json = xstrdup(

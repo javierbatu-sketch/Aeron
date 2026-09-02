@@ -82,6 +82,21 @@ def main() -> None:
     ):
         require(text, key, f"legacy material metadata key missing: {key}")
 
+    # JSON numeric syntax is locale-invariant. A process locale that uses a
+    # decimal comma must never turn a legacy scalar into invalid JSON.
+    metadata_start = text.find("static bool set_material_metadata(")
+    metadata_end = text.find("/* Append bytes", metadata_start)
+    if metadata_start < 0 or metadata_end < 0:
+        fail("legacy material metadata function could not be isolated")
+    metadata = text[metadata_start:metadata_end]
+    require(
+        metadata,
+        "Aeron_FormatAsciiDouble(",
+        "legacy material metadata does not use Aeron's locale-invariant formatter",
+    )
+    if "%.9g" in metadata:
+        fail("legacy material metadata still uses locale-sensitive %g formatting")
+
     # Existing legacy emissive metadata must survive. Both keys need to be
     # constructed in the same material-metadata region rather than one replacing
     # the other.
