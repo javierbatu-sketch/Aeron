@@ -18,11 +18,6 @@ struct lconv *xwau_test_localeconv(void)
 
 double xwau_test_strtod(const char *text, char **end)
 {
-    if (!text) {
-        if (end) *end = (char *)text;
-        return 0.0;
-    }
-
     if (strncmp(text, "0,25", 4) == 0) {
         if (end) *end = (char *)text + 4;
         return 0.25;
