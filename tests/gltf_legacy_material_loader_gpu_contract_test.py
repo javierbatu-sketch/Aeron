@@ -11,6 +11,9 @@ MESH_SOURCE = ROOT / "src" / "scene" / "mesh.c"
 
 errors = []
 
+MEASURED_XWAU_MATERIALS = 156
+MEASURED_XWAU_PRIMITIVES = 295
+
 def require(text: str, token: str, message: str) -> None:
     if token not in text:
         errors.append(message)
@@ -112,6 +115,36 @@ def main() -> None:
         errors.append("0x40 is not driven by m->legacy_material")
     if not re.search(r"m->legacy_shadeless[^;\n]*0x80u|0x80u[^;\n]*m->legacy_shadeless", mc):
         errors.append("0x80 is not driven by m->legacy_shadeless")
+
+    # B5.1: measured XWAU assets exceed the old corpus-derived renderer caps.
+    # CalamariCruiserNew reaches 156 materials and XWingCockpit 295 primitives.
+    material_cap_match = re.search(
+        r"#define\s+AERON_GLTF_MAX_MATERIALS\s+([^\s]+)", h)
+    if material_cap_match:
+        cap_token = material_cap_match.group(1)
+        if cap_token == "UINT32_MAX":
+            material_cap = (1 << 32) - 1
+        else:
+            try:
+                material_cap = int(cap_token.rstrip("uUlL"), 0)
+            except ValueError:
+                material_cap = None
+        if material_cap is not None and material_cap < MEASURED_XWAU_MATERIALS:
+            errors.append(
+                f"material cap {material_cap} rejects measured XWAU model with "
+                f"{MEASURED_XWAU_MATERIALS} materials")
+
+    primitive_clamp = re.compile(
+        r"if\s*\(\s*primitive_count\s*>\s*(\d+)u?\s*\)\s*\{?\s*"
+        r"primitive_count\s*=\s*(\d+)u?\s*;",
+        re.S,
+    )
+    for match in primitive_clamp.finditer(mc):
+        threshold, retained = (int(value) for value in match.groups())
+        if retained <= threshold and retained < MEASURED_XWAU_PRIMITIVES:
+            errors.append(
+                f"primitive clamp {retained} truncates measured XWAU model with "
+                f"{MEASURED_XWAU_PRIMITIVES} primitives")
 
     # Architecture boundary: no XWAU directive names in generic renderer files.
     for path, text in ((HEADER, h), (LOADER, c), (MESH_HEADER, mh), (MESH_SOURCE, mc)):

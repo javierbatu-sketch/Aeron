@@ -59,9 +59,6 @@ void AeronScene_MeshDestroy(AeronSceneMesh* m) {
 static uint32_t populate_material_entries(AeronPbrMaterialEntry* entries,
 										  const AeronGltfModel* src) {
 	uint32_t n = src->material_count;
-	if (n > AERON_GLTF_MAX_MATERIALS) {
-		n = AERON_GLTF_MAX_MATERIALS;
-	}
 	memset(entries, 0, (size_t)(n ? n : 1u) * sizeof *entries);
 	for (uint32_t i = 0; i < n; i++) {
 		const AeronGltfMaterial* m = &src->materials[i];
@@ -119,16 +116,15 @@ static uint32_t populate_material_entries(AeronPbrMaterialEntry* entries,
 
 static int build_material_storage(AeronSceneMesh* s, const AeronGltfModel* model, const char* name,
 								  AeronPbrMaterialEntry** out_entries, uint32_t* out_bytes) {
-	const uint32_t allocation_count =
-		model->material_count > 0
-			? (model->material_count > AERON_GLTF_MAX_MATERIALS ? AERON_GLTF_MAX_MATERIALS
-																 : model->material_count)
-			: 1u;
+	const uint32_t allocation_count = model->material_count > 0 ? model->material_count : 1u;
 	if (!out_entries || !out_bytes) {
 		return 0;
 	}
 	*out_entries = NULL;
 	*out_bytes   = 0;
+	if (allocation_count > UINT32_MAX / (uint32_t)sizeof(AeronPbrMaterialEntry)) {
+		return 0;
+	}
 	AeronPbrMaterialEntry* entries =
 		(AeronPbrMaterialEntry*)malloc((size_t)allocation_count * sizeof *entries);
 	if (!entries) {
@@ -152,17 +148,19 @@ static int build_material_storage(AeronSceneMesh* s, const AeronGltfModel* model
 
 static int build_variant_storage(AeronSceneMesh* s, const AeronGltfModel* model, const char* name,
 								 uint32_t** out_values, uint32_t* out_bytes) {
-	uint32_t primitive_count = model->total_prim_count;
+	const uint32_t primitive_count = model->total_prim_count;
 	if (!out_values || !out_bytes) {
 		return 0;
 	}
 	*out_values = NULL;
 	*out_bytes  = 0;
-	if (primitive_count > 256u) {
-		primitive_count = 256u;
-	}
-	const uint32_t groups = primitive_count > 0 ? (primitive_count + 3u) / 4u : 1u;
+	const uint32_t groups = primitive_count > 0
+		? primitive_count / 4u + (primitive_count % 4u != 0u)
+		: 1u;
 	const uint32_t rows   = model->variant_slots > 0 ? model->variant_slots : 1u;
+	if ((size_t)groups > SIZE_MAX / (size_t)rows / 4u) {
+		return 0;
+	}
 	const size_t value_count = (size_t)groups * rows * 4u;
 	if (value_count > UINT32_MAX / sizeof(uint32_t)) {
 		return 0;

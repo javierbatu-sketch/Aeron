@@ -75,11 +75,11 @@ typedef struct AeronGltfVertex {
 #define AERON_GLTF_CHANNEL_EMISSIVE           3
 #define AERON_GLTF_CHANNEL_COUNT              4
 
-/* Per-model material cap used to validate and bound cooked assets. It is not
- * an original-engine value: the classic renderers walk per-face textures.
- * The measured XWA corpus peaks at 104 materials. GPU storage is allocated
- * to the actual retained count rather than this maximum. */
-#define AERON_GLTF_MAX_MATERIALS 128
+/* Material indices and material_count are uint32 throughout the generic
+ * render contract. Keep validation at that representation boundary rather
+ * than imposing a corpus-derived content cap. GPU storage is allocated to
+ * the actual retained count and rejects byte-size overflow separately. */
+#define AERON_GLTF_MAX_MATERIALS UINT32_MAX
 #define AERON_GLTF_NO_MATERIAL   0xFFFFFFFFu
 
 /* ===== Channel KTX2 payload =========================================
