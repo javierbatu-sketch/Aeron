@@ -157,7 +157,11 @@ int main(int argc, char **argv)
 
     /* Single file. */
     const char *slash = strrchr(in, '/');
-    const char *fname = slash ? slash + 1 : in;
+    const char *backslash = strrchr(in, '\\');
+    const char *separator = slash;
+    if (!separator || (backslash && backslash > separator))
+        separator = backslash;
+    const char *fname = separator ? separator + 1 : in;
     char base[256];
     strip_ext(base, sizeof base, fname);
     return convert_one(in, outd, base,
