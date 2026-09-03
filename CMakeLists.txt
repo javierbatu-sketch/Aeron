@@ -8,6 +8,7 @@ project(aeron C CXX)
 
 option(AERON_DEBUG_UI "Build the Dear ImGui debug overlay into aeron" OFF)
 option(AERON_BUILD_TOOLS "Build Aeron asset tools" ${PROJECT_IS_TOP_LEVEL})
+option(AERON_BUILD_OPT2GLTF "Build only the opt2gltf converter executable" OFF)
 option(AERON_HOST_TOOLS_ONLY "Build only tools that must run on the build host" OFF)
 option(AERON_ENABLE_COMPAT "Build the Win32/DirectX-era API compatibility target" OFF)
 
@@ -770,7 +771,7 @@ set_target_properties(aeron_asset PROPERTIES
     C_EXTENSIONS OFF
 )
 
-if(AERON_BUILD_TOOLS)
+if(AERON_BUILD_TOOLS OR AERON_BUILD_OPT2GLTF)
     add_executable(opt2gltf
         tools/opt2gltf/main.c)
     target_include_directories(opt2gltf PRIVATE
