@@ -1497,17 +1497,17 @@ bool OptGltf_BuildMemory(const opt_file_t *opt,
         mesh->primitives_count = mesh_prim_count;
     }
 
-    /* ---- Nodes: one root + one per mesh (with hardpoint children) -- */
-    /* Count nodes: 1 root + (visible meshes) + (hardpoint + engine-glow
-     * child nodes across all visible meshes). */
+    /* ---- Nodes: one root + one per OPT component ordinal ---------- */
+    /* Component nodes preserve the source OPT ordinal even when a component
+     * has no render geometry. Hardpoints and engine glows remain children of
+     * that semantic component node. Only build->meshes stays geometry-only. */
     size_t total_hardpoints = 0;
     size_t total_glows = 0;
     for (int32_t mi = 0; mi < opt->mesh_count; ++mi) {
-        if (built[mi].vertex_count == 0) continue;
         total_hardpoints += opt->meshes[mi].hardpoint_count;
         total_glows      += opt->meshes[mi].engine_glow_count;
     }
-    size_t total_nodes = 1 + total_meshes + total_hardpoints + total_glows;
+    size_t total_nodes = 1 + (size_t)opt->mesh_count + total_hardpoints + total_glows;
     build->nodes = (cgltf_node *)calloc(total_nodes, sizeof *build->nodes);
     if (!build->nodes) { fprintf(stderr, "opt2gltf: oom\n"); goto fail; }
     build->nodes_count = total_nodes;
@@ -1520,36 +1520,41 @@ bool OptGltf_BuildMemory(const opt_file_t *opt,
     }
 
     /* Layout in build->nodes[]:
-     *   [0]                   = scene root
-     *   [1 .. total_meshes]   = per-mesh nodes
-     *   [1+total_meshes ..]   = hardpoint + engine-glow child nodes,
-     *                           contiguous per parent mesh */
+     *   [0]                         = scene root
+     *   [1 .. opt->mesh_count]      = one component node per OPT ordinal
+     *   [1+opt->mesh_count ..]      = hardpoint + engine-glow child nodes,
+     *                                 contiguous per parent component */
     cgltf_node *root_node = &build->nodes[0];
     root_node->name = gb_keep_string(build,
         xprintf_dup("OPT_%s", basename));
     if (!set_flight_extension(build, root_node, "{\"role\":\"model\"}"))
         goto fail;
 
-    cgltf_node **root_children = (cgltf_node **)calloc(total_meshes,
+    cgltf_node **root_children = (cgltf_node **)calloc((size_t)opt->mesh_count,
                                                        sizeof *root_children);
     if (!root_children) { fprintf(stderr, "opt2gltf: oom\n"); goto fail; }
     root_node->children = root_children;
-    root_node->children_count = total_meshes;
+    root_node->children_count = (cgltf_size)opt->mesh_count;
 
-    cgltf_node *next_mesh_node  = &build->nodes[1];
-    cgltf_node *next_child_node = &build->nodes[1 + total_meshes];
+    cgltf_node *next_component_node = &build->nodes[1];
+    cgltf_node *next_child_node = &build->nodes[1 + (size_t)opt->mesh_count];
 
     mesh_out = 0;
     for (int32_t mi = 0; mi < opt->mesh_count; ++mi) {
-        if (built[mi].vertex_count == 0) continue;
         const opt_mesh_t *m = &opt->meshes[mi];
-        cgltf_node *node = next_mesh_node++;
-        root_children[mesh_out] = node;
+        cgltf_node *node = next_component_node++;
+        root_children[mi] = node;
         node->parent = root_node;
-        node->mesh = &build->meshes[mesh_out];
-        /* Alias the mesh's already-kept name; do NOT re-push into
-         * owned_strings or the cleanup loop will double-free. */
-        node->name = build->meshes[mesh_out].name;
+        if (built[mi].vertex_count != 0) {
+            node->mesh = &build->meshes[mesh_out];
+            /* Alias the geometry mesh's already-kept name. */
+            node->name = build->meshes[mesh_out].name;
+            mesh_out++;
+        } else {
+            node->mesh = NULL;
+            node->name = gb_keep_string(build, xprintf_dup("Mesh%02d_%s",
+                                  (int)mi, opt_mesh_type_name(m->descriptor.mesh_type)));
+        }
 
         char extension[2048];
         size_t off = 0;
@@ -1711,7 +1716,6 @@ bool OptGltf_BuildMemory(const opt_file_t *opt,
             node->children_count = child_total;
         }
 
-        mesh_out++;
     }
 
     /* ---- Scene + asset ------------------------------------------- */

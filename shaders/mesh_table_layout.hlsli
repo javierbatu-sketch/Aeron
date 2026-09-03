@@ -8,15 +8,16 @@
  * shaders/ because shadercross accepts a single -I directory; the C
  * side includes it by relative path.
  *
- * AERON_MAX_MESH_SLOTS matches the original engine's per-craft
- * componentState / meshRotation array size (XWA_SNAP_MAX_MESH_SLOTS).
+ * AERON_MAX_MESH_SLOTS is the render/presentation component domain.
+ * OpenXWA Phase A exposes OPT renderable component ordinals 0..253;
+ * simulation-only special component state 254 is deliberately excluded.
  *
  * Offsets are in float4 units: per-slot 3x4 affine rows, then packed
  * visibility / highlight / markings / emissive lanes holding 4 slots
  * per float4 (lane[slot >> 2][slot & 3]).
  */
 
-#define AERON_MAX_MESH_SLOTS         50
+#define AERON_MAX_MESH_SLOTS         254
 #define AERON_MESH_PACKED_LANES      ((AERON_MAX_MESH_SLOTS + 3) / 4)
 
 #define AERON_MESH_TABLE_ROWS_VEC4   (AERON_MAX_MESH_SLOTS * 3)

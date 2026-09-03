@@ -36,6 +36,7 @@
 
 #include "cgltf.h"
 #include "cJSON.h"
+#include "../primitive_compact.h"
 
 /* Host-provided log (SDL3 via SDL_Log; standalone tools stub it). */
 extern void SDL_Log(const char *fmt, ...);
@@ -263,29 +264,6 @@ static void transform_direction(const float matrix[16], const float in[3],
     }
 }
 
-/* ===== cgltf accessor decoders ===================================== */
-
-static void decode_vec3(const cgltf_accessor *a, float *out, uint32_t n)
-{
-    if (!a || a->count != n) return;
-    for (uint32_t i = 0; i < n; i++)
-        cgltf_accessor_read_float(a, i, out + i * 3, 3);
-}
-
-static void decode_vec2(const cgltf_accessor *a, float *out, uint32_t n)
-{
-    if (!a || a->count != n) return;
-    for (uint32_t i = 0; i < n; i++)
-        cgltf_accessor_read_float(a, i, out + i * 2, 2);
-}
-
-static void decode_vec4(const cgltf_accessor *a, float *out, uint32_t n)
-{
-    if (!a || a->count != n) return;
-    for (uint32_t i = 0; i < n; i++)
-        cgltf_accessor_read_float(a, i, out + i * 4, 4);
-}
-
 /* Find an attribute accessor by glTF attribute type. */
 static const cgltf_accessor *prim_attr(const cgltf_primitive *p,
                                        cgltf_attribute_type t)
@@ -295,6 +273,34 @@ static const cgltf_accessor *prim_attr(const cgltf_primitive *p,
             return p->attributes[i].data;
     }
     return NULL;
+}
+
+static bool primitive_compact_map(const cgltf_primitive *p,
+                                  const cgltf_accessor *pos,
+                                  AeronPrimitiveCompactMap *out)
+{
+    if (!p || !pos || !out)
+        return false;
+    const uint32_t index_count = p->indices
+        ? (uint32_t)p->indices->count : (uint32_t)pos->count;
+    uint32_t *source_indices = NULL;
+    if (p->indices) {
+        source_indices = (uint32_t *)malloc((size_t)index_count * sizeof *source_indices);
+        if (!source_indices)
+            return false;
+        for (uint32_t i = 0; i < index_count; ++i) {
+            const cgltf_size raw = cgltf_accessor_read_index(p->indices, i);
+            if (raw > UINT32_MAX) {
+                free(source_indices);
+                return false;
+            }
+            source_indices[i] = (uint32_t)raw;
+        }
+    }
+    const bool built = AeronPrimitiveCompact_Build(
+        (uint32_t)pos->count, source_indices, index_count, out);
+    free(source_indices);
+    return built;
 }
 
 /* ===== Channel KTX2 extraction =====================================
@@ -468,7 +474,7 @@ static AeronGltfAlphaMode material_alpha_mode(const AeronGltfModel *model,
 static bool append_primitive_vertices(
     const cgltf_primitive *p, const cgltf_node *node,
     uint16_t component_index, uint32_t prim_id,
-    AeronGltfVertex *verts, uint16_t *indices,
+    AeronGltfVertex *verts, uint32_t *indices,
     uint32_t *voff_io, uint32_t *ioff_io)
 {
     const cgltf_accessor *pos = prim_attr(p, cgltf_attribute_type_position);
@@ -478,58 +484,76 @@ static bool append_primitive_vertices(
     const cgltf_accessor *idx = p->indices;
     if (!pos || p->type != cgltf_primitive_type_triangles) return false;
 
-    uint32_t vcount = (uint32_t)pos->count;
-    uint32_t icount = idx ? (uint32_t)idx->count : vcount;
+    const uint32_t source_vcount = (uint32_t)pos->count;
+    const uint32_t icount = idx ? (uint32_t)idx->count : source_vcount;
     uint32_t voff   = *voff_io;
     uint32_t ioff   = *ioff_io;
 
-    float *positions = (float *)malloc((size_t)vcount * 3 * sizeof(float));
-    float *normals   = (float *)calloc(vcount, 3 * sizeof(float));
-    float *uvs       = (float *)calloc(vcount, 2 * sizeof(float));
-    float *tangents  = (float *)calloc(vcount, 4 * sizeof(float));
-    if (!positions || !normals || !uvs || !tangents) {
-        free(positions); free(normals); free(uvs); free(tangents);
+    AeronPrimitiveCompactMap compact = {0};
+    if (!primitive_compact_map(p, pos, &compact))
         return false;
-    }
-    decode_vec3(pos, positions, vcount);
-    if (nrm) decode_vec3(nrm, normals, vcount);
-    else     for (uint32_t i = 0; i < vcount; i++) normals[i*3+2] = 1.0f;
-    if (uv)  decode_vec2(uv, uvs, vcount);
-    if (tan) decode_vec4(tan, tangents, vcount);
-    else     for (uint32_t i = 0; i < vcount; i++) tangents[i*4+3] = 1.0f;
+    const uint32_t vcount = compact.vertex_count;
 
     float matrix[16];
     cgltf_node_transform_world(node, matrix);
     for (uint32_t i = 0; i < vcount; i++) {
+        const uint32_t source_index = compact.source_vertices[i];
         AeronGltfVertex *v = &verts[voff + i];
+        float position[3];
+        float normal[3] = {0.0f, 0.0f, 0.0f};
+        float texcoord[2] = {0.0f, 0.0f};
+        float tangent_source[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float transformed[3];
-        transform_point(matrix, &positions[i*3], transformed);
+        if (!cgltf_accessor_read_float(pos, source_index, position, 3)) {
+            AeronPrimitiveCompact_Free(&compact);
+            return false;
+        }
+        if (nrm && nrm->count == source_vcount) {
+            if (!cgltf_accessor_read_float(nrm, source_index, normal, 3)) {
+                AeronPrimitiveCompact_Free(&compact);
+                return false;
+            }
+        } else if (!nrm) {
+            normal[2] = 1.0f;
+        }
+        if (uv && uv->count == source_vcount &&
+            !cgltf_accessor_read_float(uv, source_index, texcoord, 2)) {
+            AeronPrimitiveCompact_Free(&compact);
+            return false;
+        }
+        if (tan && tan->count == source_vcount) {
+            if (!cgltf_accessor_read_float(tan, source_index, tangent_source, 4)) {
+                AeronPrimitiveCompact_Free(&compact);
+                return false;
+            }
+        } else if (!tan) {
+            tangent_source[3] = 1.0f;
+        }
+        transform_point(matrix, position, transformed);
         gltf_to_aeron3(transformed, v->pos);
-        transform_direction(matrix, &normals[i*3], transformed);
+        transform_direction(matrix, normal, transformed);
         gltf_to_aeron3(transformed, v->normal);
-        transform_direction(matrix, &tangents[i*4], transformed);
+        transform_direction(matrix, tangent_source, transformed);
         const float tangent[4] = {
-            transformed[0], transformed[1], transformed[2], tangents[i*4+3]
+            transformed[0], transformed[1], transformed[2], tangent_source[3]
         };
         gltf_to_aeron_tangent(tangent, v->tangent);
-        v->uv[0]      = uvs[i*2 + 0];
-        v->uv[1]      = uvs[i*2 + 1];
+        v->uv[0]      = texcoord[0];
+        v->uv[1]      = texcoord[1];
         v->mesh_index = (float)component_index;
         v->prim_id    = prim_id;
     }
-    free(positions); free(normals); free(uvs); free(tangents);
 
-    /* Indices — biased to the primitive's range inside the ship's
-     * merged buffer. */
-    uint16_t *dst_idx = indices + ioff;
+    /* B2: merged indices preserve the full uint32 vertex domain. */
+    uint32_t *dst_idx = indices + ioff;
     for (uint32_t i = 0; i < icount; i++) {
-        cgltf_size raw = idx ? cgltf_accessor_read_index(idx, i) : i;
-        uint32_t   adj = (uint32_t)raw + voff;
-        dst_idx[i] = (adj < 0xFFFFu) ? (uint16_t)adj : 0xFFFFu;
+        uint32_t adj = compact.remapped_indices[i] + voff;
+        dst_idx[i] = adj;
     }
 
     *voff_io = voff + vcount;
     *ioff_io = ioff + icount;
+    AeronPrimitiveCompact_Free(&compact);
     return true;
 }
 
@@ -602,8 +626,10 @@ bool Aeron_GltfMeshBuildData(const cgltf_data *data,
     for (cgltf_size i = 0; i < root->children_count; i++) {
         const cgltf_node *n = root->children[i];
         const uint16_t component_index = (uint16_t)i;
-        if (!n->mesh || i >= AERON_MAX_MESH_SLOTS) goto cleanup;
+        if (i >= AERON_MAX_MESH_SLOTS) goto cleanup;
         if (!node_has_flight_role(n, "component")) goto cleanup;
+        /* A component with no render geometry still occupies its OPT ordinal. */
+        if (!n->mesh) continue;
 
         NodePlan *plan = &plans[plan_count++];
         plan->node   = n;
@@ -616,21 +642,24 @@ bool Aeron_GltfMeshBuildData(const cgltf_data *data,
             const cgltf_accessor *idx = p->indices;
             if (!pos || p->type != cgltf_primitive_type_triangles)
                 goto cleanup;
-            total_v     += (uint32_t)pos->count;
+            AeronPrimitiveCompactMap compact = {0};
+            if (!primitive_compact_map(p, pos, &compact))
+                goto cleanup;
+            if (UINT32_MAX - total_v < compact.vertex_count) {
+                AeronPrimitiveCompact_Free(&compact);
+                goto cleanup;
+            }
+            total_v     += compact.vertex_count;
+            AeronPrimitiveCompact_Free(&compact);
             total_i     += idx ? (uint32_t)idx->count : (uint32_t)pos->count;
             total_prims += 1u;
         }
     }
 
-    if (total_v > 0xFFFFu) {
-        SDL_Log("[flight_gltf] '%s' merged vertex count %u over uint16 cap",
-                source_label, total_v);
-        goto cleanup;
-    }
     if (total_v > 0 && total_i > 0) {
         out->vertices = (AeronGltfVertex *)calloc(total_v,
                                                    sizeof *out->vertices);
-        out->indices  = (uint16_t *)calloc(total_i, sizeof *out->indices);
+        out->indices  = (uint32_t *)calloc(total_i, sizeof *out->indices);
         if (!out->vertices || !out->indices) goto cleanup;
         out->vertex_count = total_v;
         out->index_count  = total_i;
@@ -713,7 +742,7 @@ bool Aeron_GltfMeshBuildData(const cgltf_data *data,
     out->blend_index_offset = 0;
     out->blend_index_count = 0;
     if (out->index_count > 0) {
-        uint16_t *sorted = (uint16_t *)malloc(
+        uint32_t *sorted = (uint32_t *)malloc(
             (size_t)out->index_count * sizeof *sorted);
         if (!sorted) goto cleanup;
         uint32_t w = 0;

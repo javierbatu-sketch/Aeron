@@ -275,7 +275,7 @@ AeronSceneMesh* AeronScene_MeshCreate(AeronCommandBuffer* cmd, const AeronFlight
 	/* ---- Merged VBO / IBO upload ---- */
 	if (model->vertex_count > 0 && model->index_count > 0) {
 		vbo_bytes = model->vertex_count * (uint32_t)sizeof(AeronGltfVertex);
-		ibo_bytes = model->index_count * (uint32_t)sizeof(uint16_t);
+		ibo_bytes = model->index_count * (uint32_t)sizeof(uint32_t);
 		s->vbo             = Aeron_CreateBuffer(&(AeronBufferDesc){
 						.usage = AERON_BUFFER_USAGE_VERTEX, .size = vbo_bytes });
 		s->ibo             = Aeron_CreateBuffer(&(AeronBufferDesc){
@@ -304,7 +304,7 @@ AeronSceneMesh* AeronScene_MeshCreate(AeronCommandBuffer* cmd, const AeronFlight
 		s->cpu_vertices =
 			(AeronSceneMeshCpuVertex*)malloc((size_t)model->vertex_count * sizeof *s->cpu_vertices);
 		s->cpu_indices =
-			(uint16_t*)malloc((size_t)model->index_count * sizeof *s->cpu_indices);
+			(uint32_t*)malloc((size_t)model->index_count * sizeof *s->cpu_indices);
 		if (!s->cpu_vertices || !s->cpu_indices) {
 			Aeron_LogError("aeron.scene", "%s: retained geometry allocation failed", name);
 			close_channel_payloads(channel_payloads);

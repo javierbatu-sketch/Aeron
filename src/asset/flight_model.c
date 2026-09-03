@@ -2,6 +2,7 @@
 
 #include "cJSON.h"
 #include "cgltf.h"
+#include "../primitive_compact.h"
 
 #include <float.h>
 #include <math.h>
@@ -169,6 +170,33 @@ static const cgltf_accessor* primitive_position(const cgltf_primitive* primitive
 	return NULL;
 }
 
+static bool primitive_topology_compact_map(const cgltf_primitive* primitive,
+                                           const cgltf_accessor* positions,
+                                           AeronPrimitiveCompactMap* out) {
+	if (!primitive || !positions || !out)
+		return false;
+	const uint32_t index_count = primitive->indices
+		? (uint32_t)primitive->indices->count : (uint32_t)positions->count;
+	uint32_t* source_indices = NULL;
+	if (primitive->indices) {
+		source_indices = malloc((size_t)index_count * sizeof *source_indices);
+		if (!source_indices)
+			return false;
+		for (uint32_t index = 0; index < index_count; ++index) {
+			const cgltf_size raw = cgltf_accessor_read_index(primitive->indices, index);
+			if (raw > UINT32_MAX) {
+				free(source_indices);
+				return false;
+			}
+			source_indices[index] = (uint32_t)raw;
+		}
+	}
+	const bool built = AeronPrimitiveCompact_Build(
+		(uint32_t)positions->count, source_indices, index_count, out);
+	free(source_indices);
+	return built;
+}
+
 static void bounds_include(AeronFlightBounds* bounds, const AeronFlightVec3* point, bool* initialized) {
 	if (!*initialized) {
 		bounds->min = bounds->max = *point;
@@ -244,10 +272,16 @@ static bool build_component_topology(const cgltf_node* node, AeronFlightComponen
 		if (!positions || primitive->type != cgltf_primitive_type_triangles || indices == 0 ||
 			indices % 3 != 0)
 			return false;
-		if (UINT32_MAX - position_count < positions->count || UINT32_MAX - face_count < indices / 3)
+		AeronPrimitiveCompactMap compact = {0};
+		if (!primitive_topology_compact_map(primitive, positions, &compact))
 			return false;
-		position_count += (uint32_t)positions->count;
+		if (UINT32_MAX - position_count < compact.vertex_count || UINT32_MAX - face_count < indices / 3) {
+			AeronPrimitiveCompact_Free(&compact);
+			return false;
+		}
+		position_count += compact.vertex_count;
 		face_count += indices / 3;
+		AeronPrimitiveCompact_Free(&compact);
 	}
 	if (!position_count || !face_count)
 		return false;
@@ -265,16 +299,20 @@ static bool build_component_topology(const cgltf_node* node, AeronFlightComponen
 	for (cgltf_size primitive_index = 0; primitive_index < node->mesh->primitives_count; ++primitive_index) {
 		const cgltf_primitive* primitive = &node->mesh->primitives[primitive_index];
 		const cgltf_accessor*  positions = primitive_position(primitive);
-		for (cgltf_size index = 0; index < positions->count; ++index) {
+		AeronPrimitiveCompactMap compact = {0};
+		if (!primitive_topology_compact_map(primitive, positions, &compact))
+			return false;
+		for (uint32_t index = 0; index < compact.vertex_count; ++index) {
+			const uint32_t source_index = compact.source_vertices[index];
 			float local[3];
 			float transformed[3];
-			if (!cgltf_accessor_read_float(positions, index, local, 3) || !isfinite(local[0]) ||
+			if (!cgltf_accessor_read_float(positions, source_index, local, 3) || !isfinite(local[0]) ||
 				!isfinite(local[1]) || !isfinite(local[2]))
-				return false;
+				goto topology_primitive_failure;
 			transform_point(matrix, local, transformed);
 			if (!isfinite(transformed[0]) || !isfinite(transformed[1]) || !isfinite(transformed[2]))
-				return false;
-			AeronFlightVec3* position = &component->topology.positions[position_offset + (uint32_t)index];
+				goto topology_primitive_failure;
+			AeronFlightVec3* position = &component->topology.positions[position_offset + index];
 			gltf_to_aeron(transformed, position);
 			bounds_include(&component->bounds, position, &have_bounds);
 		}
@@ -288,10 +326,11 @@ static bool build_component_topology(const cgltf_node* node, AeronFlightComponen
 					primitive->indices ? cgltf_accessor_read_index(primitive->indices, index + corner)
 									   : index + corner;
 				if (local_index >= positions->count)
-					return false;
-				face->indices[corner] = position_offset + (uint32_t)local_index;
+					goto topology_primitive_failure;
+				face->indices[corner] = position_offset + compact.remapped_indices[index + corner];
 				float local[3];
-				cgltf_accessor_read_float(positions, local_index, local, 3);
+				if (!cgltf_accessor_read_float(positions, local_index, local, 3))
+					goto topology_primitive_failure;
 				transform_point(matrix, local, gltf_points[corner]);
 			}
 			const float ab[3] = {
@@ -311,7 +350,7 @@ static bool build_component_topology(const cgltf_node* node, AeronFlightComponen
 			};
 			const float length = sqrtf(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
 			if (!isfinite(length))
-				return false;
+				goto topology_primitive_failure;
 			if (length == 0.0f)
 				continue;
 			normal[0] /= length;
@@ -320,7 +359,13 @@ static bool build_component_topology(const cgltf_node* node, AeronFlightComponen
 			gltf_to_aeron(normal, &face->normal);
 			face_offset++;
 		}
-		position_offset += (uint32_t)positions->count;
+		position_offset += compact.vertex_count;
+		AeronPrimitiveCompact_Free(&compact);
+		continue;
+
+topology_primitive_failure:
+		AeronPrimitiveCompact_Free(&compact);
+		return false;
 	}
 	component->topology.face_count = face_offset;
 	component->span                = (AeronFlightVec3) {
@@ -337,7 +382,7 @@ static bool build_component_topology(const cgltf_node* node, AeronFlightComponen
 }
 
 static bool build_component_semantics(const cgltf_node* node, AeronFlightComponent* component) {
-	if (!node->mesh || node->skin || !uniform_positive_transform(node))
+	if (node->skin || !uniform_positive_transform(node))
 		return false;
 	cJSON* extension = parse_flight_extension(node);
 	if (!extension || json_role(extension) != FLIGHT_ROLE_COMPONENT) {
@@ -420,12 +465,23 @@ static bool build_component_semantics(const cgltf_node* node, AeronFlightCompone
 		transform_direction(matrix, up_axis, &component->rotation.up_axis);
 		component->has_rotation = true;
 	}
-	if (!build_component_topology(node, component))
-		return false;
-	if (!has_descriptor_geometry) {
-		component->descriptor_span   = component->span;
-		component->descriptor_center = component->center;
-		component->descriptor_bounds = component->bounds;
+	if (node->mesh) {
+		if (!build_component_topology(node, component))
+			return false;
+		if (!has_descriptor_geometry) {
+			component->descriptor_span   = component->span;
+			component->descriptor_center = component->center;
+			component->descriptor_bounds = component->bounds;
+		}
+	} else {
+		/* Geometry-less components are semantic ordinal placeholders. The
+		 * authored OPT descriptor supplies their spatial contract; topology
+		 * remains empty and no render triangles are fabricated. */
+		if (!has_descriptor_geometry)
+			return false;
+		component->span   = component->descriptor_span;
+		component->center = component->descriptor_center;
+		component->bounds = component->descriptor_bounds;
 	}
 	return true;
 }
